@@ -20,7 +20,7 @@ import webbrowser
 from pathlib import Path
 
 APP_NAME = "BioAttend"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 DEFAULT_PORT = 30009
 OLD_DEFAULT_PORTS = {"8090"}  # earlier versions used 8090
 IS_WINDOWS = os.name == "nt"
@@ -182,6 +182,142 @@ def message_box(text, title=APP_NAME, error=False):
         ctypes.windll.user32.MessageBoxW(None, text, title, flags | 0x10000)  # MB_SETFOREGROUND
     else:
         print(f"[{title}] {text}")
+
+
+def copy_to_clipboard(text):
+    """Put text on the Windows clipboard, excluded from clipboard history and cloud sync (it may be a password)."""
+    if not IS_WINDOWS:
+        return False
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    user32.OpenClipboard.argtypes = (wintypes.HWND,)
+    user32.SetClipboardData.argtypes = (wintypes.UINT, wintypes.HANDLE)
+    user32.SetClipboardData.restype = wintypes.HANDLE
+    user32.RegisterClipboardFormatW.argtypes = (wintypes.LPCWSTR,)
+    user32.RegisterClipboardFormatW.restype = wintypes.UINT
+    kernel32.GlobalAlloc.argtypes = (wintypes.UINT, ctypes.c_size_t)
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalLock.argtypes = (wintypes.HGLOBAL,)
+    kernel32.GlobalLock.restype = wintypes.LPVOID
+    kernel32.GlobalUnlock.argtypes = (wintypes.HGLOBAL,)
+    data = (text + "\0").encode("utf-16-le")
+    for _ in range(10):  # another program may hold the clipboard for a moment
+        if user32.OpenClipboard(None):
+            break
+        time.sleep(0.05)
+    else:
+        return False
+    try:
+        user32.EmptyClipboard()
+        handle = kernel32.GlobalAlloc(0x0002, len(data))  # GMEM_MOVEABLE
+        ctypes.memmove(kernel32.GlobalLock(handle), data, len(data))
+        kernel32.GlobalUnlock(handle)
+        user32.SetClipboardData(13, handle)  # CF_UNICODETEXT (the clipboard now owns the memory)
+        for fmt in ("ExcludeClipboardContentFromMonitorProcessing", "CanIncludeInClipboardHistory",
+                    "CanUploadToCloudClipboard"):
+            marker = kernel32.GlobalAlloc(0x0002, 4)
+            ctypes.memmove(kernel32.GlobalLock(marker), b"\0\0\0\0", 4)  # DWORD 0 = "no"
+            kernel32.GlobalUnlock(marker)
+            user32.SetClipboardData(user32.RegisterClipboardFormatW(fmt), marker)
+        return True
+    finally:
+        user32.CloseClipboard()
+
+
+def _task_dialog_function():
+    """TaskDialogIndirect from Common Controls 6 (loaded from WinSxS if this process has the old version)."""
+    import ctypes
+    import glob
+    try:
+        return ctypes.WinDLL("comctl32").TaskDialogIndirect
+    except AttributeError:
+        pass
+    pattern = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "WinSxS",
+                           "amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.*", "comctl32.dll")
+    for dll in sorted(glob.glob(pattern), reverse=True):
+        try:
+            return ctypes.WinDLL(dll).TaskDialogIndirect
+        except (OSError, AttributeError):
+            continue
+    return None
+
+
+def show_password_dialog(username, password):
+    """New-password dialog with a "Copy password" button (falls back to auto-copy + message box)."""
+    if not IS_WINDOWS:
+        print(f"[{APP_NAME}] user {username}: new password {password}")
+        return
+    import ctypes
+    from ctypes import wintypes
+    task_dialog = _task_dialog_function()
+    content = (f"User name:   {username}\nPassword:    {password}\n\n"
+               "Sign in with this password, then change it (your name at the top right → Change password).")
+    if task_dialog is None:
+        copied = copy_to_clipboard(password)
+        message_box("New password for the administrator account\n\n" + content +
+                    ("\n\nThe password has been copied to the clipboard." if copied else ""))
+        return
+
+    class TASKDIALOG_BUTTON(ctypes.Structure):
+        _pack_ = 1
+        _fields_ = [("nButtonID", ctypes.c_int), ("pszButtonText", wintypes.LPCWSTR)]
+
+    CALLBACK = ctypes.WINFUNCTYPE(ctypes.c_long, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+                                  ctypes.c_ssize_t)
+
+    class TASKDIALOGCONFIG(ctypes.Structure):
+        _pack_ = 1
+        _fields_ = [("cbSize", wintypes.UINT), ("hwndParent", wintypes.HWND), ("hInstance", wintypes.HINSTANCE),
+                    ("dwFlags", ctypes.c_int), ("dwCommonButtons", ctypes.c_int),
+                    ("pszWindowTitle", wintypes.LPCWSTR), ("pszMainIcon", ctypes.c_void_p),
+                    ("pszMainInstruction", wintypes.LPCWSTR), ("pszContent", wintypes.LPCWSTR),
+                    ("cButtons", wintypes.UINT), ("pButtons", ctypes.POINTER(TASKDIALOG_BUTTON)),
+                    ("nDefaultButton", ctypes.c_int), ("cRadioButtons", wintypes.UINT),
+                    ("pRadioButtons", ctypes.c_void_p), ("nDefaultRadioButton", ctypes.c_int),
+                    ("pszVerificationText", wintypes.LPCWSTR), ("pszExpandedInformation", wintypes.LPCWSTR),
+                    ("pszExpandedControlText", wintypes.LPCWSTR), ("pszCollapsedControlText", wintypes.LPCWSTR),
+                    ("pszFooterIcon", ctypes.c_void_p), ("pszFooter", wintypes.LPCWSTR),
+                    ("pfCallback", CALLBACK), ("lpCallbackData", ctypes.c_ssize_t), ("cxWidth", wintypes.UINT)]
+
+    COPY_ID, TDN_CREATED, TDN_BUTTON_CLICKED, TDM_SET_ELEMENT_TEXT, TDE_CONTENT = 1001, 0, 2, 0x0400 + 108, 0
+    copied_text = ctypes.create_unicode_buffer(content + "\n\n✓ Password copied - paste it with Ctrl+V.")
+    user32 = ctypes.WinDLL("user32")
+    user32.SendMessageW.argtypes = (wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+    user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
+
+    def on_event(hwnd, msg, wparam, lparam, ref):
+        if msg == TDN_CREATED:
+            user32.SetForegroundWindow(hwnd)
+        elif msg == TDN_BUTTON_CLICKED and wparam == COPY_ID:
+            if copy_to_clipboard(password):
+                user32.SendMessageW(hwnd, TDM_SET_ELEMENT_TEXT, TDE_CONTENT, ctypes.addressof(copied_text))
+            return 1  # S_FALSE: keep the dialog open
+        return 0
+
+    callback = CALLBACK(on_event)
+    buttons = (TASKDIALOG_BUTTON * 1)(TASKDIALOG_BUTTON(COPY_ID, "Copy password"))
+    config = TASKDIALOGCONFIG()
+    config.cbSize = ctypes.sizeof(TASKDIALOGCONFIG)
+    config.dwFlags = 0x0008  # TDF_ALLOW_DIALOG_CANCELLATION (Esc closes)
+    config.dwCommonButtons = 0x0020  # Close
+    config.pszWindowTitle = APP_NAME
+    config.pszMainIcon = 0xFFFD  # TD_INFORMATION_ICON
+    config.pszMainInstruction = "New password for the administrator account"
+    config.pszContent = content
+    config.cButtons = 1
+    config.pButtons = buttons
+    config.nDefaultButton = COPY_ID
+    config.pfCallback = callback
+    task_dialog.argtypes = (ctypes.POINTER(TASKDIALOGCONFIG), ctypes.POINTER(ctypes.c_int), ctypes.c_void_p,
+                            ctypes.c_void_p)
+    task_dialog.restype = ctypes.c_long
+    pressed = ctypes.c_int(0)
+    if task_dialog(ctypes.byref(config), ctypes.byref(pressed), None, None) != 0:  # failed: fall back
+        copied = copy_to_clipboard(password)
+        message_box("New password for the administrator account\n\n" + content +
+                    ("\n\nThe password has been copied to the clipboard." if copied else ""))
 
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -510,8 +646,7 @@ class DesktopApp:
             admin.set_password(password)
             admin.save(update_fields=["password"])
             cache.clear()  # also lifts a login lockout
-            message_box(f"New password for the administrator account\n\nUser name:  {admin.get_username()}\n"
-                        f"Password:   {password}\n\nWrite it down and change it after signing in.")
+            show_password_dialog(admin.get_username(), password)
         threading.Thread(target=work, daemon=True).start()
 
     def quit(self):

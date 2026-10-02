@@ -86,7 +86,7 @@ by DigiCert). Windows shows the publisher, and any change to the files breaks th
 | **Start with Windows** | **On by default:** BioAttend starts hidden in the tray when you sign in to Windows (no window), so punches are always collected. Untick to stop that |
 | Allow other computers on the network | Lets other office PCs open BioAttend in their browser (see §4) |
 | Open data folder | Opens `%LOCALAPPDATA%\BioAttend` |
-| Reset administrator password… | Sets a new random password for the main administrator and shows it (also lifts a login lockout) |
+| Reset administrator password… | Sets a new random password for the main administrator and shows it with a **Copy password** button (also lifts a login lockout) |
 | Quit BioAttend | Stops everything. **No punches are collected until it is started again.** Punches are not lost: they stay on the devices and are downloaded on the next start. |
 
 > The PC must be switched on, with BioAttend running, to collect punches in real time. Disable

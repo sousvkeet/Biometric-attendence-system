@@ -21,7 +21,7 @@
 #>
 param(
     [string]$Python = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
-    [string]$Version = "1.0.2",
+    [string]$Version = "1.0.3",
     [string]$CertThumbprint = "",
     [string]$PfxPath = "",
     [string]$PfxPassword = "",
@@ -82,8 +82,10 @@ function Sign-File($file) {
 }
 function Get-NuGetPackage($id, $ver, $dest) {
     # Downloads a NuGet package and checks it against the SHA-512 published by nuget.org
-    if (Test-Path $dest) { return }
-    $pkg = "$dest.nupkg"
+    $done = Join-Path $dest ".extracted"  # written last, so an interrupted extraction is redone
+    if (Test-Path $done) { return }
+    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+    $pkg = "$dest.nupkg.zip"  # .zip: Windows PowerShell 5.1 Expand-Archive refuses other extensions
     Download "https://api.nuget.org/v3-flatcontainer/$id/$ver/$id.$ver.nupkg" $pkg
     $reg = Invoke-RestMethod "https://api.nuget.org/v3/registration5-semver1/$id/$ver.json"
     $entry = $reg.catalogEntry
@@ -92,6 +94,7 @@ function Get-NuGetPackage($id, $ver, $dest) {
     if ($actual -ne $entry.packageHash) { throw "Checksum mismatch for NuGet package $id $ver" }
     Expand-Archive $pkg -DestinationPath $dest -Force
     Remove-Item $pkg
+    Set-Content $done "$id $ver"
 }
 
 Step "Python build environment (.buildvenv)"
