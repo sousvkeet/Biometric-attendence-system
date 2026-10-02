@@ -20,7 +20,7 @@ import webbrowser
 from pathlib import Path
 
 APP_NAME = "BioAttend"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 DEFAULT_PORT = 30009
 OLD_DEFAULT_PORTS = {"8090"}  # earlier versions used 8090
 IS_WINDOWS = os.name == "nt"
@@ -71,7 +71,7 @@ def ensure_config():
     cfg = read_config()
     changed = False
     defaults = {"SECRET_KEY": secrets.token_urlsafe(48), "TIME_ZONE": local_time_zone(),
-                "PORT": str(DEFAULT_PORT), "LAN_ACCESS": "false"}
+                "PORT": str(DEFAULT_PORT), "LAN_ACCESS": "false", "AUTOSTART": "true"}
     for key, value in defaults.items():
         if not cfg.get(key):
             cfg[key], changed = value, True
@@ -208,6 +208,57 @@ def set_autostart(enabled):
                 pass
 
 
+def apply_autostart(cfg):
+    """Start with Windows (hidden in the tray) unless the user turned it off; always point at this program."""
+    if not IS_WINDOWS or not getattr(sys, "frozen", False):
+        return
+    try:
+        set_autostart(cfg.get("AUTOSTART", "true") == "true")
+    except OSError:
+        pass
+
+
+KNOWN_FOLDERS = {  # how Windows stores paths in the tray-icon settings
+    "{6D809377-6AF0-444B-8957-A3773F02200E}": "ProgramW6432",   # Program Files (64-bit)
+    "{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}": "ProgramFiles(x86)",
+    "{F1B32785-6FBA-4FCF-9D55-7B8E7F157091}": "LOCALAPPDATA",
+}
+
+
+def expand_tray_path(path):
+    for guid, env in KNOWN_FOLDERS.items():
+        if path.upper().startswith(guid):
+            return os.path.join(os.environ.get(env, ""), path[len(guid):].lstrip("\\"))
+    return path
+
+
+def show_tray_icon_on_taskbar():
+    """Windows 11 puts new tray icons in the hidden (^) area. Show ours next to the clock once - the user can
+    change it back in Settings > Personalization > Taskbar > Other system tray icons."""
+    if not IS_WINDOWS:
+        return False
+    import winreg
+    me = os.path.normcase(os.path.abspath(sys.executable))
+    root = r"Control Panel\NotifyIconSettings"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, root) as key:
+            count = winreg.QueryInfoKey(key)[0]
+            names = [winreg.EnumKey(key, i) for i in range(count)]
+        for name in names:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, rf"{root}\{name}", 0,
+                                winreg.KEY_READ | winreg.KEY_SET_VALUE) as sub:
+                try:
+                    exe = winreg.QueryValueEx(sub, "ExecutablePath")[0]
+                except OSError:
+                    continue
+                if os.path.normcase(os.path.abspath(expand_tray_path(exe))) == me:
+                    winreg.SetValueEx(sub, "IsPromoted", 0, winreg.REG_DWORD, 1)
+                    return True
+    except OSError:
+        pass
+    return False
+
+
 def free_port(preferred, host):
     for port in [preferred, *range(preferred + 1, preferred + 50)]:
         with socket.socket() as s:
@@ -316,9 +367,26 @@ class DesktopApp:
         )
         self.icon = pystray.Icon(APP_NAME, image, f"{APP_NAME} – running (port {self.port})", menu)
         self.icon.run_detached()
+        threading.Thread(target=self._promote_tray_icon_once, daemon=True, name="tray-promote").start()
+
+    def _promote_tray_icon_once(self):
+        cfg = read_config()
+        if cfg.get("TRAY_ICON_SHOWN") == "true":
+            return
+        for _ in range(10):  # Windows registers the icon a moment after it appears
+            time.sleep(3)
+            if show_tray_icon_on_taskbar():
+                cfg = read_config()
+                cfg["TRAY_ICON_SHOWN"] = "true"
+                write_config(cfg)
+                return
 
     def _toggle_autostart(self, icon, item):
-        set_autostart(not autostart_enabled())
+        enabled = not autostart_enabled()
+        set_autostart(enabled)
+        cfg = read_config()
+        cfg["AUTOSTART"] = "true" if enabled else "false"
+        write_config(cfg)
 
     def _toggle_lan(self, icon, item):
         cfg = read_config()
@@ -424,6 +492,7 @@ def main():
 
     cfg = ensure_config()
     lan = configure_environment(cfg)
+    apply_autostart(cfg)
     app = DesktopApp(background="--background" in args)
     try:
         app.start_backend(cfg, lan)

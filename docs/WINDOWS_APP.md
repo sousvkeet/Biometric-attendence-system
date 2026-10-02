@@ -66,6 +66,9 @@ by DigiCert). Windows shows the publisher, and any change to the files breaks th
 
 - **Opening BioAttend:** use the desktop or Start-menu icon. It opens in its own window and works like
   the website.
+- **BioAttend starts automatically when you sign in to Windows**, without opening a window. The window only opens
+  when you click BioAttend (desktop icon, Start menu or the tray icon). The tray icon is shown next to the clock.
+  To hide it under the **^** arrow, use Settings → Personalization → Taskbar → Other system tray icons.
 - **Closing the window does not stop BioAttend.** It keeps running in the **system tray** (the green
   fingerprint icon near the clock) and keeps receiving punches from the devices. Double-click the tray
   icon to open it again.
@@ -76,7 +79,7 @@ by DigiCert). Windows shows the publisher, and any change to the files breaks th
 | Open BioAttend | Show the window |
 | Open in web browser | Open the portal in your normal browser |
 | **Back up now** | Back up immediately with the saved destinations and passphrase. No sign-in is needed, and a Windows notification shows the result. The Start menu also has **"Back up BioAttend now"**. |
-| **Start with Windows** | Starts BioAttend hidden in the tray when you sign in to Windows. **Recommended**, so punches are always collected |
+| **Start with Windows** | **On by default:** BioAttend starts hidden in the tray when you sign in to Windows (no window), so punches are always collected. Untick to stop that |
 | Allow other computers on the network | Lets other office PCs open BioAttend in their browser (see §4) |
 | Open data folder | Opens `%LOCALAPPDATA%\BioAttend` |
 | Reset administrator password… | Sets a new random password for the main administrator and shows it (also lifts a login lockout) |

@@ -49,6 +49,10 @@ class DesktopConfigTests(SimpleTestCase):
                 self.assertGreaterEqual(len(cfg["SECRET_KEY"]), 40)
                 self.assertEqual(desk.ensure_config()["SECRET_KEY"], cfg["SECRET_KEY"])  # stable across starts
                 self.assertEqual(cfg["PORT"], "30009")
+                self.assertEqual(cfg["AUTOSTART"], "true")  # start with Windows, hidden in the tray
+                os.environ["ProgramW6432"] = "C:/Program Files"
+                self.assertTrue(desk.expand_tray_path(
+                    "{6D809377-6AF0-444B-8957-A3773F02200E}\\BioAttend\\BioAttend.exe").startswith("C:/Program Files"))
                 cfg["PORT"] = "8090"  # an install from an earlier version
                 desk.write_config(cfg)
                 self.assertEqual(desk.ensure_config()["PORT"], "30009")
