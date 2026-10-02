@@ -9,6 +9,8 @@ LIBS = ["django", "whitenoise", "waitress", "dj_database_url", "dotenv", "openpy
 
 
 def keep(name):
+    if name.rsplit(".", 1)[-1].startswith("test"):  # never ship test modules (tests, test_*.py)
+        return False
     return not any(part in name for part in (".tests", ".test.", "django.contrib.gis", "django.db.backends.oracle",
                                              "django.db.backends.mysql", "webview.platforms.android",
                                              "webview.platforms.cocoa", "webview.platforms.gtk", "webview.platforms.qt"))
