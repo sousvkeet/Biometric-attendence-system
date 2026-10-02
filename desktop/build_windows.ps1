@@ -21,7 +21,7 @@
 #>
 param(
     [string]$Python = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
-    [string]$Version = "1.0.1",
+    [string]$Version = "1.0.2",
     [string]$CertThumbprint = "",
     [string]$PfxPath = "",
     [string]$PfxPassword = "",
@@ -123,24 +123,6 @@ Run $Py @("-m", "pip", "install", "--quiet", "-r", "requirements.txt", "-r", "de
 
 Step "Icon"
 Run $Py @("desktop\make_icon.py")
-
-Step "rclone (checksum verified)"
-$RcloneExe = "desktop\vendor\rclone.exe"
-if (-not (Test-Path $RcloneExe)) {
-    $rv = "1.75.1"
-    $zip = "desktop\vendor\rclone.zip"
-    Download "https://downloads.rclone.org/v$rv/rclone-v$rv-windows-amd64.zip" $zip
-    Download "https://downloads.rclone.org/v$rv/SHA256SUMS" "desktop\vendor\rclone-SHA256SUMS.txt"
-    $line = Get-Content "desktop\vendor\rclone-SHA256SUMS.txt" | Where-Object { $_ -match "windows-amd64\.zip" } | Select-Object -First 1
-    if (-not $line) { throw "rclone checksum list could not be read" }
-    $expected = ($line -split "\s+")[0].ToLower()
-    Remove-Item "desktop\vendor\rclone-SHA256SUMS.txt"
-    $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-    if ($expected -ne $actual) { throw "rclone checksum mismatch" }
-    Expand-Archive $zip -DestinationPath "desktop\vendor\rclone-tmp" -Force
-    Copy-Item (Get-ChildItem "desktop\vendor\rclone-tmp" -Recurse -Filter rclone.exe | Select-Object -First 1).FullName $RcloneExe
-    Remove-Item $zip, "desktop\vendor\rclone-tmp" -Recurse -Force
-}
 
 Step "Static files"
 $env:SECRET_KEY = "build-only-not-secret-0123456789abcdefghijklmnop"

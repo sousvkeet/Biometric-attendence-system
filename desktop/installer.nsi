@@ -32,17 +32,19 @@ BrandingText "${APP} ${VERSION}"
 !insertmacro MUI_LANGUAGE "English"
 
 Function StopRunningApp
-  ; Ask a running BioAttend to quit (keeps the database consistent), then give it a moment.
+  ; Ask a running BioAttend to quit (keeps the database consistent); wait only if one was running.
   IfFileExists "$INSTDIR\BioAttend.exe" 0 done
-    ExecWait '"$INSTDIR\BioAttend.exe" --quit'
-    Sleep 4000
+    ExecWait '"$INSTDIR\BioAttend.exe" --quit' $0
+    StrCmp $0 "0" 0 done
+    Sleep 3000
   done:
 FunctionEnd
 
 Function un.StopRunningApp
   IfFileExists "$INSTDIR\BioAttend.exe" 0 done
-    ExecWait '"$INSTDIR\BioAttend.exe" --quit'
-    Sleep 4000
+    ExecWait '"$INSTDIR\BioAttend.exe" --quit' $0
+    StrCmp $0 "0" 0 done
+    Sleep 3000
   done:
 FunctionEnd
 

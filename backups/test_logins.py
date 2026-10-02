@@ -147,3 +147,44 @@ class LoginDetailsTests(TransactionTestCase):
         BackupDestination.objects.all().delete()
         with self.assertRaisesMessage(BackupError, "destination"):
             backup_now()
+
+
+class RcloneDownloadTests(TransactionTestCase):
+    def test_downloads_verified_rclone_once_when_missing(self):
+        import hashlib
+        import io
+        import zipfile
+        tmp = tempfile.mkdtemp()
+        try:
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w") as z:
+                z.writestr("rclone-v1.75.1-linux-amd64/rclone", b"#!/bin/sh\necho fake\n")
+            payload = buf.getvalue()
+            good = hashlib.sha256(payload).hexdigest()
+
+            class R:
+                def __init__(self, text=None, content=None):
+                    self.text, self.content = text, content
+
+            def fake_get(url, timeout):
+                if url.endswith("SHA256SUMS"):
+                    return R(text=f"{good}  rclone-v1.75.1-linux-amd64.zip\n")
+                return R(content=payload)
+            from . import transports
+            with override_settings(VAR_DIR=__import__("pathlib").Path(tmp), RCLONE_BINARY="definitely-not-installed-rclone"), \
+                    mock.patch("platform.machine", return_value="x86_64"), mock.patch("platform.system", return_value="Linux"), \
+                    mock.patch("os.name", "posix"), mock.patch("requests.get", side_effect=fake_get):
+                path = transports.rclone_binary()
+                self.assertTrue(path.endswith(os.path.join("bin", "rclone")))
+                self.assertEqual(open(path, "rb").read(), b"#!/bin/sh\necho fake\n")
+                self.assertEqual(transports.rclone_binary(), path)       # second call: no new download
+            os.remove(path)
+            bad = lambda url, timeout: R(text="0" * 64 + "  rclone-v1.75.1-linux-amd64.zip\n") if url.endswith("SUMS") else R(content=payload)
+            with override_settings(VAR_DIR=__import__("pathlib").Path(tmp), RCLONE_BINARY="definitely-not-installed-rclone"), \
+                    mock.patch("platform.machine", return_value="x86_64"), mock.patch("platform.system", return_value="Linux"), \
+                    mock.patch("os.name", "posix"), mock.patch("requests.get", side_effect=bad):
+                from .transports import TransportError
+                with self.assertRaisesMessage(TransportError, "checksum"):
+                    transports.rclone_binary()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)

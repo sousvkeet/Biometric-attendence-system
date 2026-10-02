@@ -378,6 +378,56 @@ def _check(response, action):
 
 
 # ---------------------------------------------------------------- rclone (70+ providers)
+RCLONE_VERSION = "1.75.1"
+
+
+def rclone_binary(log=lambda m: None):
+    """Path of the rclone program. If it is not installed, the official build is downloaded once (checksum
+    verified) into the data folder - so installations that never use rclone do not carry its 80 MB."""
+    import platform
+    import shutil
+    from django.conf import settings
+    configured = settings.RCLONE_BINARY
+    if os.path.isabs(configured) and os.path.isfile(configured):
+        return configured
+    found = shutil.which(configured)
+    if found:
+        return found
+    exe = "rclone.exe" if os.name == "nt" else "rclone"
+    local = os.path.join(settings.VAR_DIR, "bin", exe)
+    if os.path.isfile(local):
+        return local
+    arch = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine().lower())
+    system = {"nt": "windows"}.get(os.name, "linux" if platform.system() == "Linux" else None)
+    if not arch or not system:
+        raise TransportError("rclone is not installed and cannot be downloaded automatically for this system")
+    log(f"rclone is not installed yet - downloading the official rclone {RCLONE_VERSION} (one time)...")
+    import hashlib
+    import io
+    import zipfile
+
+    import requests
+    base = f"https://downloads.rclone.org/v{RCLONE_VERSION}"
+    name = f"rclone-v{RCLONE_VERSION}-{system}-{arch}.zip"
+    try:
+        sums = requests.get(f"{base}/SHA256SUMS", timeout=30).text
+        data = requests.get(f"{base}/{name}", timeout=600).content
+    except requests.RequestException as exc:
+        raise TransportError(f"rclone could not be downloaded: {exc}")
+    expected = next((ln.split()[0] for ln in sums.splitlines() if ln.strip().endswith(name)), None)
+    if not expected or hashlib.sha256(data).hexdigest() != expected:
+        raise TransportError("rclone download failed its checksum check - not used")
+    member = next(n for n in zipfile.ZipFile(io.BytesIO(data)).namelist() if n.endswith("/" + exe))
+    os.makedirs(os.path.dirname(local), exist_ok=True)
+    tmp = local + ".part"
+    with open(tmp, "wb") as fh:
+        fh.write(zipfile.ZipFile(io.BytesIO(data)).read(member))
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, local)
+    log(f"rclone {RCLONE_VERSION} installed in {os.path.dirname(local)}")
+    return local
+
+
 REMOTE_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_\-. ]*$")
 
 
@@ -403,12 +453,12 @@ class RcloneTransport(BaseTransport):
             with os.fdopen(fd, "w") as fh:
                 fh.write(config or "")
             os.chmod(conf_path, 0o600)
-            cmd = [settings.RCLONE_BINARY, "--config", conf_path, "--retries", "3", "--low-level-retries", "5",
+            cmd = [rclone_binary(), "--config", conf_path, "--retries", "3", "--low-level-retries", "5",
                    "--contimeout", f"{TIMEOUT}s", "--timeout", "300s", *args]
             try:
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
             except FileNotFoundError:
-                raise TransportError(f"rclone is not installed ({settings.RCLONE_BINARY} not found)")
+                raise TransportError("rclone could not be started")
             except subprocess.TimeoutExpired:
                 raise TransportError("rclone timed out")
             with open(conf_path) as fh:

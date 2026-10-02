@@ -20,7 +20,7 @@ import webbrowser
 from pathlib import Path
 
 APP_NAME = "BioAttend"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 DEFAULT_PORT = 30009
 OLD_DEFAULT_PORTS = {"8090"}  # earlier versions used 8090
 IS_WINDOWS = os.name == "nt"
@@ -125,6 +125,9 @@ def redirect_std_streams():
 
 # ---------------------------------------------------------------- talking to an already running instance
 def send_to_running(command):
+    if IS_WINDOWS:
+        import ctypes
+        ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
     try:
         info = json.loads(CONTROL_FILE.read_text(encoding="utf-8"))
         with socket.create_connection(("127.0.0.1", info["control_port"]), timeout=5) as s:
@@ -288,14 +291,88 @@ def run_backup_text(trigger):
     return "Backup failed - open BioAttend → Backups for details.", True
 
 
+WINDOW_LOCK = HOME / "run" / "window.lock"
+BELOW_NORMAL_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS = 0x4000, 0x20
+STARTUP_DELAY_SECONDS = 60  # after Windows sign-in, wait before talking to the devices
+
+
+def set_process_priority(priority_class):
+    if IS_WINDOWS:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE  # 64-bit handle (a plain int would be cut to 32 bit)
+        kernel32.SetPriorityClass.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel32.SetPriorityClass.restype = wintypes.BOOL
+        kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), priority_class)
+
+
+def find_app_window():
+    """Handle of the visible BioAttend window (not message boxes), or None."""
+    if not IS_WINDOWS:
+        return None
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    found = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def visit(hwnd, _):
+        title = ctypes.create_unicode_buffer(256)
+        user32.GetWindowTextW(hwnd, title, 256)
+        cls = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(hwnd, cls, 64)
+        if title.value == APP_NAME and cls.value != "#32770":
+            found.append(hwnd)
+            return False
+        return True
+    user32.EnumWindows(visit, 0)
+    return found[0] if found else None
+
+
+def window_process_running():
+    from core.osutil import acquire_exclusive_lock
+    handle = acquire_exclusive_lock(WINDOW_LOCK)
+    if handle is None:
+        return True
+    handle.close()
+    return False
+
+
+def run_window(url):
+    """The window process: shows the portal; closing it ends this process and frees its memory."""
+    from core.osutil import acquire_exclusive_lock
+    lock = acquire_exclusive_lock(WINDOW_LOCK)
+    if lock is None:  # a window is already open
+        bring_to_front(find_app_window())
+        return
+    set_process_priority(NORMAL_PRIORITY_CLASS)  # the background process runs below normal
+    import webview
+    webview.settings["ALLOW_DOWNLOADS"] = True
+    webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
+    webview.create_window(APP_NAME, url, width=1360, height=860, min_size=(960, 640), text_select=True)
+    webview.start(private_mode=False, storage_path=str(HOME / "webview"))
+    lock.close()
+
+
+def bring_to_front(hwnd):
+    if hwnd and IS_WINDOWS:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        user32.SetForegroundWindow(hwnd)
+
+
 class DesktopApp:
+    """Background process: tray icon, web server and device worker (no window, below-normal priority)."""
+
     def __init__(self, background):
         self.background = background
-        self.window = None
         self.icon = None
         self.server = None
         self.stop = threading.Event()
         self.quitting = False
+        self.told_tray = False
 
     # -- startup
     def start_backend(self, cfg, lan):
@@ -310,13 +387,15 @@ class DesktopApp:
         from django.core.wsgi import get_wsgi_application
         host = "0.0.0.0" if lan else "127.0.0.1"
         self.port = free_port(int(cfg.get("PORT") or DEFAULT_PORT), host)
-        self.server = create_server(get_wsgi_application(), host=host, port=self.port, threads=8,
+        self.server = create_server(get_wsgi_application(), host=host, port=self.port, threads=4,
                                     ident=APP_NAME, channel_timeout=300)
         threading.Thread(target=self.server.run, daemon=True, name="web").start()
         threading.Thread(target=self._run_worker, daemon=True, name="worker").start()
         self.url = f"http://127.0.0.1:{self.port}/"
 
     def _run_worker(self):
+        if self.background and self.stop.wait(STARTUP_DELAY_SECONDS):
+            return  # quit during the start-up delay
         from core.management.commands.run_worker import Command
         while not self.stop.is_set():
             try:
@@ -326,25 +405,31 @@ class DesktopApp:
                 logging.getLogger("core").exception("Worker stopped unexpectedly; restarting in 10 s")
                 self.stop.wait(10)
 
-    # -- window and tray
+    # -- window (separate process, only while it is open)
     def show(self):
-        if self.window is not None:
-            self.window.show()
-            self.window.restore()
+        if window_process_running():
+            bring_to_front(find_app_window())
+            return
+        import subprocess
+        args = [sys.executable, "--window", self.url] if getattr(sys, "frozen", False) else \
+            [sys.executable, os.path.abspath(__file__), "--window", self.url]
+        subprocess.Popen(args, close_fds=True)
+        threading.Thread(target=self._watch_window, daemon=True, name="window-watch").start()
 
-    def _on_closing(self):
-        if self.quitting:
-            return True
-        self.window.hide()  # keep running in the tray (device sync and live punches continue)
-        if not getattr(self, "_told_tray", False):
-            self._told_tray = True
-            if self.icon is not None:
-                try:
-                    self.icon.notify("BioAttend keeps running in the system tray. Right-click the icon to quit.",
-                                     APP_NAME)
-                except Exception:
-                    pass
-        return False
+    def _watch_window(self):
+        for _ in range(30):  # wait until the window process has started
+            if window_process_running():
+                break
+            time.sleep(1)
+        while window_process_running() and not self.quitting:
+            time.sleep(2)
+        if not self.quitting and not self.told_tray and self.icon is not None:
+            self.told_tray = True
+            try:
+                self.icon.notify("BioAttend keeps running in the background and collects punches. "
+                                 "Click the BioAttend icon to open it again.", APP_NAME)
+            except Exception:
+                pass
 
     def build_tray(self):
         import pystray
@@ -366,8 +451,6 @@ class DesktopApp:
             item(f"Quit {APP_NAME}", lambda: self.quit()),
         )
         self.icon = pystray.Icon(APP_NAME, image, f"{APP_NAME} – running (port {self.port})", menu)
-        self.icon.run_detached()
-        threading.Thread(target=self._promote_tray_icon_once, daemon=True, name="tray-promote").start()
 
     def _promote_tray_icon_once(self):
         cfg = read_config()
@@ -436,6 +519,10 @@ class DesktopApp:
             return
         self.quitting = True
         self.stop.set()
+        hwnd = find_app_window()
+        if hwnd:
+            import ctypes
+            ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE: close the window process too
         if self.server is not None:
             try:
                 self.server.close()
@@ -443,18 +530,17 @@ class DesktopApp:
                 pass
         if self.icon is not None:
             self.icon.stop()
-        if self.window is not None:
-            self.window.destroy()
 
     def run(self):
-        import webview
-        webview.settings["ALLOW_DOWNLOADS"] = True
-        webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
-        self.window = webview.create_window(APP_NAME, self.url, width=1360, height=860, min_size=(960, 640),
-                                            hidden=self.background, text_select=True)
-        self.window.events.closing += self._on_closing
+        """Tray icon on the main thread; returns when the user quits."""
         self.build_tray()
-        webview.start(private_mode=False, storage_path=str(HOME / "webview"))
+
+        def setup(icon):
+            icon.visible = True
+            threading.Thread(target=self._promote_tray_icon_once, daemon=True, name="tray-promote").start()
+            if not self.background:
+                self.show()
+        self.icon.run(setup=setup)
         self.quit()
 
 
@@ -468,6 +554,10 @@ def main():
         configure_environment(cfg)
         from django.core.management import execute_from_command_line
         execute_from_command_line(["manage.py", *(args if cli else args[1:])])
+        return
+
+    if args and args[0] == "--window":  # the window process (started by the background process)
+        run_window(args[1] if len(args) > 1 else f"http://127.0.0.1:{DEFAULT_PORT}/")
         return
 
     from core.osutil import acquire_exclusive_lock
@@ -493,6 +583,7 @@ def main():
     cfg = ensure_config()
     lan = configure_environment(cfg)
     apply_autostart(cfg)
+    set_process_priority(BELOW_NORMAL_PRIORITY_CLASS)  # never compete with the user's programs
     app = DesktopApp(background="--background" in args)
     try:
         app.start_backend(cfg, lan)

@@ -170,8 +170,8 @@ MESSAGE_TAGS = {40: "danger"}
 BACKUP_WORK_DIR = Path(os.environ["BACKUP_WORK_DIR"]) if os.environ.get("BACKUP_WORK_DIR") else VAR_DIR / "backups"
 
 # rclone binary: the copy downloaded into var/bin, else one on the PATH.
-RCLONE_BINARY = os.environ.get("RCLONE_BINARY") or (
-    str(VAR_DIR / "bin" / "rclone") if (VAR_DIR / "bin" / "rclone").exists() else "rclone")
+_rclone_local = VAR_DIR / "bin" / ("rclone.exe" if os.name == "nt" else "rclone")
+RCLONE_BINARY = os.environ.get("RCLONE_BINARY") or (str(_rclone_local) if _rclone_local.exists() else "rclone")
 
 # Folder used by simulator devices (virtual devices for testing/training).
 SIMULATOR_DIR = Path(os.environ["SIMULATOR_DIR"]) if os.environ.get("SIMULATOR_DIR") else VAR_DIR / "simulators"

@@ -19,7 +19,7 @@
     <SummaryInformation Description="BioAttend - biometric attendance for ZKTeco devices" Manufacturer="BioAttend" />
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="A newer version of BioAttend is already installed." />
-    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="mszip" />
 
     <Icon Id="BioAttendIcon" SourceFile="$(IconFile)" />
     <Property Id="ARPPRODUCTICON" Value="BioAttendIcon" />

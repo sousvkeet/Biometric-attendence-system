@@ -69,6 +69,10 @@ by DigiCert). Windows shows the publisher, and any change to the files breaks th
 - **BioAttend starts automatically when you sign in to Windows**, without opening a window. The window only opens
   when you click BioAttend (desktop icon, Start menu or the tray icon). The tray icon is shown next to the clock.
   To hide it under the **^** arrow, use Settings → Personalization → Taskbar → Other system tray icons.
+- **BioAttend is light in the background.** It needs about 80 MB of memory, runs at *below normal* priority so
+  it never slows down other programs, and waits one minute after Windows sign-in before it talks to the devices.
+  The window is a separate process that starts when you open BioAttend. Closing the window frees its memory
+  (about 500 MB).
 - **Closing the window does not stop BioAttend.** It keeps running in the **system tray** (the green
   fingerprint icon near the clock) and keeps receiving punches from the devices. Double-click the tray
   icon to open it again.
@@ -99,8 +103,8 @@ by DigiCert). Windows shows the publisher, and any change to the files breaks th
    - Click **Test connection**, then **Download users & fingerprints**.
    - The PC must be on the same network as the devices.
 4. **Setup → Backups:** set a passphrase and add destinations. Use a local folder or USB drive **plus an
-   off-site one** (Google Drive/OneDrive via rclone, S3, SFTP…). Then turn on the schedule. rclone is
-   included in the app.
+   off-site one** (Google Drive/OneDrive via rclone, S3, SFTP…). Then turn on the schedule. The rclone program is
+   downloaded automatically (about 25 MB, checksum-verified) the first time you test or use an rclone destination.
 
 Everything else (employees, fingerprint registration, live punches, attendance, leave, reports) works
 exactly as described in the main [README](../README.md).
