@@ -1,0 +1,42 @@
+{% load static %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="data:,">
+<title>Restore in progress</title>
+<link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.min.css' %}">
+<link rel="stylesheet" href="{% static 'vendor/bootstrap-icons/bootstrap-icons.min.css' %}">
+<link rel="stylesheet" href="{% static 'css/app.css' %}"></head>
+<body><div class="login-wrap"><div class="card" style="width:min(560px,94vw)"><div class="card-body p-4">
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <div id="icon" class="spinner-border text-success" role="status"></div>
+    <div><h1 class="h5 fw-bold mb-0" id="title">Restoring the database…</h1>
+      <div class="text-secondary small" id="label"></div></div>
+  </div>
+  <p id="message" class="mb-3">The portal is paused while a backup is being restored.</p>
+  <ol class="steps list-unstyled mb-3" id="steps"></ol>
+  <a id="go" href="/login/" class="btn btn-primary d-none">Continue to sign in</a>
+  <p class="small text-secondary mb-0 mt-2" id="foot">This page updates by itself. Please do not close the portal.</p>
+</div></div></div>
+<script>
+const url = "{{ status_url }}";
+async function poll() {
+  try {
+    const s = await (await fetch(url, {cache: "no-store"})).json();
+    if (!s.active && !s.finished) { location.href = "/"; return; }
+    document.getElementById("message").textContent = s.message || "";
+    const steps = (s.steps || []).filter(([k]) => k !== "backup" || s.backup_first);
+    const idx = steps.findIndex(([k]) => k === s.stage);
+    document.getElementById("steps").innerHTML = steps.map(([k, t], i) =>
+      `<li class="${s.finished ? (s.ok ? "done" : (i === idx || (idx < 0 && i === steps.length - 1) ? "fail" : (i < idx ? "done" : ""))) : (i < idx ? "done" : i === idx ? "active" : "")}">${t}</li>`).join("");
+    if (s.finished) {
+      document.getElementById("icon").className = s.ok ? "bi bi-check-circle-fill text-success fs-2" : "bi bi-x-circle-fill text-danger fs-2";
+      document.getElementById("title").textContent = s.ok ? "Restore complete" : "Restore failed";
+      document.getElementById("go").classList.remove("d-none");
+      document.getElementById("go").textContent = s.ok ? "Continue" : "Back to the portal";
+      document.getElementById("go").href = s.ok ? "/" : "/backups/";
+      document.getElementById("foot").classList.add("d-none");
+      return;
+    }
+  } catch (e) {}
+  setTimeout(poll, 1500);
+}
+poll();
+</script></body></html>

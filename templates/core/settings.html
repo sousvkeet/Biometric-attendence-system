@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head"><h1 class="page-title">Settings</h1></div>
+<div class="row g-3">
+<div class="col-lg-8"><div class="card"><div class="card-body">
+<form method="post">{% csrf_token %}
+  {% include "partials/form_fields.html" %}
+  <div class="mt-4"><button class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save settings</button></div>
+</form></div></div></div>
+<div class="col-lg-4">
+  <div class="card mb-3"><div class="card-header">Background worker</div><div class="card-body small">
+    <p>Status: {% if obj.worker_online %}<span class="text-success fw-semibold">running</span>{% else %}<span class="text-danger fw-semibold">not running</span>{% endif %}
+    {% if obj.worker_heartbeat %}<br>Last heartbeat: {{ obj.worker_heartbeat|dtimes:"d M Y" }}{% endif %}</p>
+    <p class="mb-1">Last automatic attendance download: {{ obj.last_auto_attendance_sync|dtime:"d M"|default:"never" }}</p>
+    <p>Last automatic user sync: {{ obj.last_auto_user_sync|dtime:"d M"|default:"never" }}</p>
+    <p class="mb-0 text-secondary">Start it with <code>.venv/bin/python manage.py run_worker</code>.</p>
+  </div></div>
+  <div class="card"><div class="card-header"><i class="bi bi-shield-lock me-1"></i>Device safety</div><div class="card-body small">
+    <ul class="mb-0 ps-3">
+      <li>Attendance logs are <strong>never deleted</strong> from a device; clear/erase commands are blocked in code.</li>
+      <li>Users are removed from devices only when you delete an employee with “portal and all devices” – just that person (ID and name must match), with a backup for Restore.</li>
+      <li>Existing users are only updated when name, card or password differ; device privileges are never lowered.</li>
+      <li>Fingerprints are only <em>added</em> to devices; existing fingerprints are kept.</li>
+      <li>Use “Write protection” on a device to make it strictly read-only.</li>
+    </ul>
+  </div></div>
+</div>
+</div>
+{% endblock %}

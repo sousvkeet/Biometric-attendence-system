@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Punch logs{% endblock %}
+{% block content %}
+<div class="page-head"><h1 class="page-title">Punch logs</h1>
+  <div class="actions">
+    <a class="btn btn-light" href="?{% query_replace export='csv' page=None %}"><i class="bi bi-filetype-csv me-1"></i>CSV</a>
+    <a class="btn btn-light" href="?{% query_replace export='xlsx' page=None %}"><i class="bi bi-file-earmark-excel me-1"></i>Excel</a>
+    <a class="btn btn-primary" href="{% url 'attendance:manual_punch' %}"><i class="bi bi-plus-lg me-1"></i>Manual punch</a>
+  </div></div>
+<form class="filter-bar row g-2 align-items-end">
+  <div class="col-6 col-md-2"><label class="form-label small mb-0">From</label><input type="date" class="form-control" name="from" value="{{ date_from|date:'Y-m-d' }}"></div>
+  <div class="col-6 col-md-2"><label class="form-label small mb-0">To</label><input type="date" class="form-control" name="to" value="{{ date_to|date:'Y-m-d' }}"></div>
+  <div class="col-md-2"><input class="form-control" name="q" value="{{ q }}" placeholder="Name or ID"></div>
+  <div class="col-md-2"><select class="form-select" name="device"><option value="">All devices</option>{% for d in devices %}<option value="{{ d.pk }}" {% if request.GET.device == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+  <div class="col-md-2"><select class="form-select" name="department"><option value="">All departments</option>{% for d in departments %}<option value="{{ d.pk }}" {% if request.GET.department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+  <div class="col-md-2"><select class="form-select" name="source"><option value="">All sources</option>{% for k, v in sources %}<option value="{{ k }}" {% if request.GET.source == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+  <div class="col-auto"><div class="form-check"><input class="form-check-input" type="checkbox" name="unknown" value="1" id="unk" {% if request.GET.unknown %}checked{% endif %}><label class="form-check-label small" for="unk">Unknown IDs only</label></div></div>
+  <div class="col-auto"><button class="btn btn-outline-primary"><i class="bi bi-funnel me-1"></i>Filter</button></div>
+</form>
+{% with top=1 %}{% include "partials/pagination.html" %}{% endwith %}
+<div class="card"><div class="table-responsive">
+<table class="table table-sm table-hover align-middle mb-0">
+  <thead><tr><th>Date</th><th>Time</th><th>ID</th><th>Employee</th><th>Department</th><th>Device</th><th>Verify</th><th>State</th><th></th></tr></thead>
+  <tbody>{% for l in page %}<tr>
+    <td class="text-nowrap">{{ l.punch_time|date:"D d M Y" }}</td><td class="mono">{{ l.punch_time|hms }}</td>
+    <td class="mono">{{ l.device_user_id }}</td>
+    <td>{% if l.employee %}<a href="{{ l.employee.get_absolute_url }}">{{ l.employee.name }}</a>{% else %}{% with rn=removed|get_item:l.device_user_id %}{% if rn %}<span class="text-secondary">{{ rn }}</span> <span class="badge bg-soft-secondary">removed</span>{% else %}<span class="text-secondary">Not in portal</span>{% endif %}{% endwith %}{% endif %}</td>
+    <td class="small">{{ l.employee.department|default:"" }}</td><td>{{ l.device.name|default:"—" }}</td>
+    <td class="small">{{ l.verify_label }}</td><td class="small">{{ l.punch_label }}</td>
+    <td class="text-end">{% if l.source != 'device' %}<span class="badge bg-soft-info" title="{{ l.note }}">{{ l.get_source_display }}</span>
+      <form method="post" action="{% url 'attendance:delete_punch' l.pk %}" class="d-inline" data-confirm="Delete this manual punch?">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-sm btn-link text-danger p-0 ms-1" data-no-spin><i class="bi bi-x-circle"></i></button></form>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="9"><div class="empty-state"><i class="bi bi-clock-history"></i>No punches for this filter.</div></td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}

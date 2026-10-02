@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Activity log{% endblock %}
+{% block content %}
+<div class="page-head"><h1 class="page-title">Activity log</h1></div>
+<form class="filter-bar row g-2"><div class="col-md-4"><input class="form-control" name="q" value="{{ q }}" placeholder="Search action or target"></div>
+  <div class="col-auto"><button class="btn btn-outline-primary">Search</button></div></form>
+<div class="card"><div class="table-responsive"><table class="table table-sm table-hover mb-0">
+<thead><tr><th>When</th><th>User</th><th>Action</th><th>Target</th><th>Details</th><th>IP</th></tr></thead>
+<tbody>{% for a in page %}<tr><td class="text-nowrap">{{ a.created_at|dtime:"d M Y" }}</td><td>{{ a.user|default:"system" }}</td>
+<td>{{ a.action }}</td><td>{{ a.target }}</td><td class="small text-secondary">{{ a.details|truncatechars:120 }}</td><td class="small">{{ a.ip_address|default:"" }}</td></tr>
+{% empty %}<tr><td colspan="6"><div class="empty-state">No activity yet.</div></td></tr>{% endfor %}</tbody></table></div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}

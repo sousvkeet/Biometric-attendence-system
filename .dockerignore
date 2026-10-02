@@ -1,0 +1,10 @@
+.venv
+var
+staticfiles
+db.sqlite3*
+.env
+.env.docker
+.git
+.playwright-mcp
+**/__pycache__
+*.pyc

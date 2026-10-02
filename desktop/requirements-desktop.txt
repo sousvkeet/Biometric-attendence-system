@@ -1,0 +1,8 @@
+# Extra packages for the Windows desktop app (on top of ../requirements.txt)
+waitress==3.0.2
+pywebview==5.4
+pystray==0.19.5
+pillow==11.3.0
+tzlocal==5.3.1
+tzdata==2025.2
+pyinstaller==6.16.0

@@ -1,0 +1,29 @@
+{% load static %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="data:,">
+<title>Sign in · {{ company_name|default:"Biometric Attendance" }}</title>
+<link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.min.css' %}">
+<link rel="stylesheet" href="{% static 'vendor/bootstrap-icons/bootstrap-icons.min.css' %}">
+<link rel="stylesheet" href="{% static 'css/app.css' %}"></head>
+<body>
+<div class="login-wrap">
+  <div class="login-card p-3">
+    <div class="text-center mb-4">
+      <div class="d-inline-grid rounded-4 text-white mb-2" style="width:64px;height:64px;place-items:center;background:var(--brand);font-size:2rem"><i class="bi bi-fingerprint"></i></div>
+      <h1 class="h4 fw-bold mb-0">BioAttend</h1>
+      <div class="text-secondary">{{ company_name|default:"Biometric attendance management" }}</div>
+    </div>
+    <div class="card"><div class="card-body p-4">
+      {% if form.non_field_errors %}{% for e in form.non_field_errors %}<div class="alert alert-danger py-2">{% if locked %}{{ e }}{% else %}Invalid username or password.{% endif %}</div>{% endfor %}{% elif form.errors %}<div class="alert alert-danger py-2">Invalid username or password.</div>{% endif %}
+      <form method="post">{% csrf_token %}
+        <div class="mb-3"><label class="form-label">Username</label>
+          <input name="username" class="form-control" autofocus required value="{{ form.username.value|default:'' }}"></div>
+        <div class="mb-3"><label class="form-label">Password</label>
+          <input type="password" name="password" class="form-control" required></div>
+        <input type="hidden" name="next" value="{{ next }}">
+        <button class="btn btn-primary w-100" type="submit"><i class="bi bi-box-arrow-in-right me-1"></i>Sign in</button>
+      </form>
+    </div></div>
+    <p class="text-center text-secondary small mt-3">Employees: sign in with the account given by HR.</p>
+  </div>
+</div>
+</body></html>

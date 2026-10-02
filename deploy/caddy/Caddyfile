@@ -1,0 +1,18 @@
+# Caddy reverse proxy with automatic HTTPS.  Copy to /etc/caddy/Caddyfile and edit the site address.
+#
+# A) Public domain name pointing to this server (Let's Encrypt certificate is obtained automatically):
+#      attendance.example.com {
+# B) Office network only (Caddy creates its own certificate; install Caddy's root certificate on the PCs
+#    that use the portal, or accept the browser warning once):
+#      https://192.168.1.50 {   +   tls internal
+
+attendance.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8090
+	request_body {
+		max_size 2GB   # backup uploads for restore
+	}
+	log {
+		output file /var/log/caddy/bioattend-access.log
+	}
+}

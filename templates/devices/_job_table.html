@@ -1,0 +1,10 @@
+{% load app_tags %}
+<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+  <thead><tr><th>#</th><th>Job</th><th>Target</th><th>Status</th><th>Progress</th><th>Created</th><th>Duration</th><th>By</th></tr></thead>
+  <tbody>{% for j in jobs %}<tr>
+    <td><a href="{{ j.get_absolute_url }}">#{{ j.pk }}</a></td><td>{{ j.get_job_type_display }}</td><td class="small">{{ j.target_label }}</td>
+    <td>{% status_badge j.status %}</td><td class="small text-secondary text-truncate" style="max-width:220px">{{ j.progress }}</td>
+    <td class="small text-nowrap">{{ j.created_at|dtimes:"d M" }}</td><td class="small">{% if j.duration is not None %}{{ j.duration|floatformat:1 }} s{% endif %}</td>
+    <td class="small">{% if j.is_automatic %}<span class="text-secondary">auto</span>{% else %}{{ j.created_by|default:"" }}{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="8"><div class="empty-state">No jobs yet.</div></td></tr>{% endfor %}</tbody>
+</table></div>

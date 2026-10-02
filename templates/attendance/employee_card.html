@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}{{ employee.name }} – {{ first|date:"M Y" }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">{{ employee.name }} <span class="text-secondary mono fs-6">#{{ employee.device_user_id }}</span></h1>
+  <div class="text-secondary">Attendance card · {{ first|date:"F Y" }} · {{ employee.department|default:"" }} · Shift: {{ employee.shift_label }}</div></div>
+  <div class="actions no-print">
+    <a class="btn btn-light" href="?month={{ prev_month|date:'Y-m' }}"><i class="bi bi-chevron-left"></i></a>
+    <a class="btn btn-light" href="?month={{ next_month|date:'Y-m' }}"><i class="bi bi-chevron-right"></i></a>
+    <button class="btn btn-light" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+    <a class="btn btn-outline-primary" href="{{ employee.get_absolute_url }}">Employee</a></div></div>
+{% include "attendance/_day_table.html" %}
+{% endblock %}

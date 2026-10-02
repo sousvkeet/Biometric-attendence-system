@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Missed punch{% endblock %}
+{% block content %}
+<div class="page-head"><h1 class="page-title">Missed punch requests</h1></div>
+<div class="row g-3">
+  <div class="col-lg-5"><div class="card"><div class="card-header">Report a missed punch</div><div class="card-body">
+    <form method="post">{% csrf_token %}{% with col='col-12' %}{% include "partials/form_fields.html" %}{% endwith %}
+      <div class="mt-3"><button class="btn btn-primary">Submit for approval</button></div></form></div></div></div>
+  <div class="col-lg-7"><div class="card"><div class="card-header">My requests</div><div class="table-responsive"><table class="table table-sm mb-0">
+    <thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Status</th></tr></thead>
+    <tbody>{% for r in items %}<tr><td>{{ r.date|date:"d M Y" }}</td><td>{{ r.time|hm }}</td><td>{{ r.get_punch_state_display }}</td><td class="small">{{ r.reason|truncatechars:60 }}</td>
+      <td>{% status_badge r.status %}</td></tr>{% empty %}<tr><td colspan="5" class="text-secondary">No requests yet.</td></tr>{% endfor %}</tbody></table></div></div></div>
+</div>
+{% endblock %}

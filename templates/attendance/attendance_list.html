@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Attendance{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title">Attendance</h1>
+    <div class="text-secondary">{% if single_day %}{{ date_from|date:"l, d F Y" }}{% else %}{{ date_from|date:"d M Y" }} – {{ date_to|date:"d M Y" }}{% endif %}
+      · first punch = IN, last punch = OUT</div></div>
+  <div class="actions">
+    <a class="btn btn-light" href="?{% query_replace export='csv' page=None %}"><i class="bi bi-filetype-csv me-1"></i>CSV</a>
+    <a class="btn btn-light" href="?{% query_replace export='xlsx' page=None %}"><i class="bi bi-file-earmark-excel me-1"></i>Excel</a>
+    <a class="btn btn-primary" href="{% url 'attendance:manual_punch' %}?next={{ request.get_full_path|urlencode }}"><i class="bi bi-plus-lg me-1"></i>Manual punch</a>
+  </div>
+</div>
+
+<form class="filter-bar" method="get" id="attFilters">
+  <div class="d-flex flex-wrap gap-1 mb-2">
+    {% for key, label in periods %}
+      <a class="btn btn-sm {% if period == key %}btn-primary{% else %}btn-light{% endif %}" href="?{% query_replace period=key from=None to=None page=None %}">{{ label }}</a>
+    {% endfor %}
+    <span class="btn btn-sm {% if period == 'custom' %}btn-primary{% else %}btn-light{% endif %} disabled">Custom</span>
+  </div>
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-md-2"><label class="form-label small mb-0">From</label><input type="date" class="form-control" name="from" value="{{ date_from|date:'Y-m-d' }}"></div>
+    <div class="col-6 col-md-2"><label class="form-label small mb-0">To</label><input type="date" class="form-control" name="to" value="{{ date_to|date:'Y-m-d' }}"></div>
+    <div class="col-md-2"><label class="form-label small mb-0">Employee</label><input class="form-control" name="q" value="{{ q }}" placeholder="Name or ID"></div>
+    <div class="col-6 col-md-2"><label class="form-label small mb-0">Department</label><select class="form-select" name="department"><option value="">All</option>
+      {% for d in departments %}<option value="{{ d.pk }}" {% if request.GET.department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label class="form-label small mb-0">Designation</label><select class="form-select" name="designation"><option value="">All</option>
+      {% for d in designations %}<option value="{{ d.pk }}" {% if request.GET.designation == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label class="form-label small mb-0">Shift</label><select class="form-select" name="shift"><option value="">All</option>
+      {% for s in shifts %}<option value="{{ s.pk }}" {% if request.GET.shift == s.pk|stringformat:"s" %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label class="form-label small mb-0">Status</label><select class="form-select" name="status"><option value="">All</option>
+      {% for key, label in statuses %}<option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label class="form-label small mb-0">Sort by</label><select class="form-select" name="sort">
+      <option value="date" {% if sort == 'date' %}selected{% endif %}>Date (newest)</option>
+      <option value="name" {% if sort == 'name' %}selected{% endif %}>Name</option>
+      <option value="in" {% if sort == 'in' %}selected{% endif %}>IN time</option>
+      <option value="late" {% if sort == 'late' %}selected{% endif %}>Most late</option>
+      <option value="worked" {% if sort == 'worked' %}selected{% endif %}>Most worked</option></select></div>
+    <div class="col-auto"><button class="btn btn-outline-primary" data-no-spin><i class="bi bi-funnel me-1"></i>Apply</button></div>
+    <div class="col-auto"><a class="btn btn-link text-danger" href="{% url 'attendance:list' %}"><i class="bi bi-x-circle me-1"></i>Clear all filters</a></div>
+  </div>
+  {% if chips %}
+  <div class="d-flex flex-wrap gap-2 align-items-center mt-2 small">
+    <span class="text-secondary">Active filters:</span>
+    {% for label, url in chips %}<a class="filter-chip" href="{{ url }}" title="Remove this filter">{{ label }} <i class="bi bi-x"></i></a>{% endfor %}
+    <a class="small text-danger ms-1" href="{% url 'attendance:list' %}">Clear all</a>
+  </div>
+  {% endif %}
+</form>
+
+<div class="status-strip mb-3">
+  {% for key, label in statuses %}{% with n=counts|get_item:key %}
+    <a class="status-pill s-{{ key }} {% if status == key %}active{% endif %} {% if not n %}zero{% endif %}"
+       href="?{% if status == key %}{% query_replace status=None page=None %}{% else %}{% query_replace status=key page=None %}{% endif %}">
+      <span class="n">{{ n }}</span><span class="t">{{ label }}</span></a>
+  {% endwith %}{% endfor %}
+</div>
+
+{% with top=1 %}{% include "partials/pagination.html" %}{% endwith %}
+<div class="card"><div class="table-responsive">
+<table class="table table-hover align-middle mb-0 att-table">
+  <thead><tr><th>Date</th><th>Employee</th><th>Shift</th><th>IN</th><th>OUT</th><th>Worked</th><th>Late</th><th>Early</th><th>OT</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for e, r in page %}
+  <tr class="{% if r.out_missing %}row-missing{% elif r.status == 'A' %}row-absent{% endif %}">
+    <td class="text-nowrap"><div class="fw-semibold">{{ r.date|date:"d M" }}</div><div class="small text-secondary">{{ r.date|date:"l" }}</div></td>
+    <td><a class="fw-semibold" href="{% url 'attendance:employee_card' e.pk %}?month={{ r.date|date:'Y-m' }}">{{ e.name }}</a>
+      <div class="small text-secondary"><span class="mono">#{{ e.device_user_id }}</span>{% if e.department %} · {{ e.department }}{% endif %}</div></td>
+    <td class="small text-nowrap">{{ r.shift_name }}{% if r.shift_auto %} <span class="badge bg-soft-info" title="Detected from the first punch">auto</span>{% endif %}<div class="text-secondary">{{ r.shift_window }}</div></td>
+    <td class="text-nowrap">{% if r.first_in %}<span class="mono fw-semibold">{{ r.first_in|hm }}</span>
+        {% if r.is_late %}<span class="badge bg-soft-warning ms-1">Late {{ r.late_minutes|minutes }}</span>{% endif %}
+      {% else %}<span class="text-secondary">—</span>{% endif %}</td>
+    <td class="text-nowrap">
+      {% if r.last_out %}<span class="mono fw-semibold">{{ r.last_out|hm }}</span>
+      {% elif r.out_missing %}<span class="badge text-bg-danger">OUT missing</span><div class="small text-danger">shift ends {{ r.expected_out|hm }}</div>
+      {% elif r.in_progress %}<span class="badge bg-soft-success"><span class="dot dot-online me-1"></span>In office</span><div class="small text-secondary">till {{ r.expected_out|hm }}</div>
+      {% else %}<span class="text-secondary">—</span>{% endif %}</td>
+    <td>{{ r.worked|default:"—" }}{% if r.short_hours %}<div class="small text-warning-emphasis">short</div>{% endif %}</td>
+    <td class="text-warning-emphasis">{% if r.is_late %}{{ r.late_minutes|minutes }}{% endif %}</td>
+    <td class="text-warning-emphasis">{% if r.is_early %}{{ r.early_minutes|minutes }}{% endif %}</td>
+    <td>{{ r.overtime }}</td>
+    <td><span class="badge bg-soft-{{ r.css }}">{{ r.label }}</span>
+      {% if r.holiday_name %}<div class="small text-secondary">{{ r.holiday_name }}</div>{% endif %}
+      {% if r.status == 'HD' %}<div class="small text-secondary">{{ r.note }}</div>{% endif %}</td>
+    <td class="text-end text-nowrap">
+      {% if r.punches|length > 1 %}<span class="badge bg-soft-secondary" title="All punches: {% for p in r.punches %}{{ p|hm }}{% if not forloop.last %}, {% endif %}{% endfor %}"><i class="bi bi-clock-history"></i> {{ r.punches|length }}</span>{% endif %}
+      {% if r.out_missing %}<a class="btn btn-sm btn-outline-danger" href="{% url 'attendance:manual_punch' %}?employee={{ e.pk }}&at={{ r.expected_out|date:'Y-m-d' }}T{{ r.expected_out|date:'H:i' }}&state=1&next={{ request.get_full_path|urlencode }}">+ Add OUT</a>{% endif %}
+      {% if r.status == 'A' %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'attendance:manual_punch' %}?employee={{ e.pk }}&at={{ r.expected_in|date:'Y-m-d' }}T{{ r.expected_in|date:'H:i' }}&state=0&next={{ request.get_full_path|urlencode }}" title="Add a missed IN punch">+ IN</a>{% endif %}
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="11"><div class="empty-state"><i class="bi bi-calendar-x"></i>No attendance matches these filters.
+    <div class="mt-2"><a href="{% url 'attendance:list' %}">Clear all filters</a></div></div></td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}

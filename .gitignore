@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+db.sqlite3*
+staticfiles/
+var/
+.env
+.playwright-mcp/
+.env.docker
+.buildvenv/
+dist/
+build/
+desktop/vendor/
+desktop/bioattend.ico
+desktop/bioattend.png

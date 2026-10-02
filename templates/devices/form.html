@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{% if device %}Edit {{ device.name }}{% else %}Add device{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><h1 class="page-title">{% if device %}Edit {{ device.name }}{% else %}Add device{% endif %}</h1>
+  <div class="actions"><a class="btn btn-light" href="{% if device %}{{ device.get_absolute_url }}{% else %}{% url 'devices:list' %}{% endif %}"><i class="bi bi-arrow-left me-1"></i>Back</a>
+  {% if device %}<form method="post" action="{% url 'devices:delete' device.pk %}" data-confirm="Remove {{ device.name }} from the portal? (Nothing on the device itself is changed.)">{% csrf_token %}
+    <button class="btn btn-outline-danger" data-no-spin><i class="bi bi-trash me-1"></i>Remove from portal</button></form>{% endif %}</div></div>
+<div class="row g-3">
+<div class="col-lg-8"><div class="card"><div class="card-body">
+<form method="post">{% csrf_token %}
+  {% include "partials/form_fields.html" %}
+  <div class="mt-4"><button class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save & test connection</button></div>
+</form></div></div></div>
+<div class="col-lg-4"><div class="card"><div class="card-body small">
+  <p><strong>ZKTeco devices</strong> communicate on TCP/UDP port <code>4370</code>. Find the IP on the device: Menu → Comm. → Ethernet.</p>
+  <p><strong>Enroll machine</strong> – users and fingerprints registered on this device are imported and copied to all other devices.
+     <strong>Normal machine</strong> – only receives users and sends attendance.</p>
+  <p class="mb-0"><strong>Write protection</strong> – the portal will only read from the device (attendance, users) and never write to it.</p>
+</div></div></div>
+</div>
+{% endblock %}

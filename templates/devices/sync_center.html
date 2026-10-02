@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Sync center{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">Sync center</h1>
+  <div class="text-secondary">{{ active_count }} active device{{ active_count|pluralize }} · {{ total_emp }} active employees</div></div></div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6 fw-bold"><i class="bi bi-arrow-repeat text-success me-1"></i>Users & fingerprints – all devices</h2>
+    <p class="small text-secondary">Reads every device, imports new users/fingerprints enrolled on enroll machines, then makes sure every device has every employee and fingerprint. Nothing is ever deleted from a device.</p>
+    <form method="post" action="{% url 'devices:sync_action' 'sync_users' %}">{% csrf_token %}
+      <button class="btn btn-primary"><i class="bi bi-arrow-repeat me-1"></i>Sync users across all devices</button></form>
+  </div></div></div>
+  <div class="col-lg-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6 fw-bold"><i class="bi bi-cloud-download text-success me-1"></i>Attendance – all devices</h2>
+    <p class="small text-secondary">Downloads new punches from every device into the portal. Records on the device are left untouched. Duplicates are ignored automatically.</p>
+    <div class="d-flex flex-wrap gap-2">
+      <form method="post" action="{% url 'devices:sync_action' 'pull_attendance' %}">{% csrf_token %}
+        <button class="btn btn-primary"><i class="bi bi-cloud-download me-1"></i>Download attendance</button></form>
+      <form method="post" action="{% url 'devices:sync_action' 'pull_attendance' %}">{% csrf_token %}<input type="hidden" name="force" value="1">
+        <button class="btn btn-light">Full re-download</button></form>
+    </div>
+  </div></div></div>
+</div>
+<div class="card mb-3"><div class="card-body d-flex flex-wrap gap-2 align-items-center">
+  <span class="small text-secondary me-2">Other actions:</span>
+  <form method="post" action="{% url 'devices:sync_action' 'refresh' %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary"><i class="bi bi-plug me-1"></i>Refresh status of all devices</button></form>
+  <form method="post" action="{% url 'devices:sync_action' 'push_users' %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary"><i class="bi bi-person-up me-1"></i>Upload portal employees only</button></form>
+  <form method="post" action="{% url 'devices:sync_action' 'sync_time' %}" data-confirm="Set the clock of every writable device to the server time?">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary"><i class="bi bi-clock me-1"></i>Sync device clocks</button></form>
+  <span class="ms-auto small text-secondary">Automatic: attendance every {{ settings_obj.attendance_sync_interval }} min{% if not settings_obj.auto_attendance_sync %} (off){% endif %},
+    users every {{ settings_obj.user_sync_interval }} min{% if not settings_obj.auto_user_sync %} (off){% endif %} · <a href="{% url 'settings' %}">change</a></span>
+</div></div>
+
+<div class="card mb-3"><div class="card-header">Device overview</div><div class="table-responsive">
+<table class="table align-middle mb-0">
+  <thead><tr><th>Device</th><th>Mode</th><th class="text-end">Users on device</th><th class="text-end">Linked employees</th><th class="text-end">Missing employees</th><th class="text-end">Fingerprint memory</th><th>Last user sync</th><th>Last attendance</th></tr></thead>
+  <tbody>{% for r in rows %}{% with d=r.device %}<tr>
+    <td><span class="dot dot-{{ d.status }} me-2"></span><a href="{{ d.get_absolute_url }}">{{ d.name }}</a>{% if not d.is_active %} <span class="badge bg-soft-secondary">disabled</span>{% endif %}</td>
+    <td class="small">{% if d.read_only %}<i class="bi bi-lock"></i> Read-only{% else %}Read & write{% endif %} · {% if d.is_enroll_device %}Enroll{% else %}Normal{% endif %}</td>
+    <td class="text-end">{{ d.user_count|default:"–" }}</td><td class="text-end">{{ r.linked }}</td>
+    <td class="text-end">{% if r.missing %}<span class="badge bg-soft-warning">{{ r.missing }}</span>{% elif r.missing == 0 %}<span class="text-success"><i class="bi bi-check-lg"></i></span>{% else %}–{% endif %}</td>
+    <td class="text-end">{% if d.fingerprint_capacity %}{{ d.fingerprint_count }} / {{ d.fingerprint_capacity }}{% else %}–{% endif %}</td>
+    <td class="small">{{ d.last_user_sync|since }}</td><td class="small">{{ d.last_attendance_sync|since }}</td></tr>{% endwith %}
+  {% empty %}<tr><td colspan="8"><div class="empty-state">No devices. <a href="{% url 'devices:create' %}">Add one</a>.</div></td></tr>{% endfor %}</tbody>
+</table></div></div>
+
+<div class="card"><div class="card-header d-flex">Recent jobs<a class="ms-auto small" href="{% url 'devices:jobs' %}">All jobs →</a></div>
+{% include "devices/_job_table.html" with jobs=jobs %}</div>
+{% endblock %}

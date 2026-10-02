@@ -1,0 +1,10 @@
+# Used by the "caddy" service in docker-compose.yml. Replace the address:
+#   public domain:      attendance.example.com {
+#   office network:     https://192.168.1.50 {   and add the line   tls internal
+attendance.example.com {
+	encode gzip
+	reverse_proxy web:8090
+	request_body {
+		max_size 2GB
+	}
+}

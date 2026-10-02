@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Sync jobs{% endblock %}
+{% block content %}
+<div class="page-head"><h1 class="page-title">Sync jobs</h1>
+  <div class="actions">
+    <a class="btn btn-sm {% if not request.GET.auto %}btn-primary{% else %}btn-light{% endif %}" href="?">All</a>
+    <a class="btn btn-sm {% if request.GET.auto == '0' %}btn-primary{% else %}btn-light{% endif %}" href="?auto=0">Manual only</a>
+    <a class="btn btn-sm {% if request.GET.status == 'failed' %}btn-primary{% else %}btn-light{% endif %}" href="?status=failed">Failed</a>
+  </div></div>
+<div class="card">{% include "devices/_job_table.html" with jobs=page %}</div>
+{% include "partials/pagination.html" %}
+{% endblock %}

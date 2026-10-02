@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ dest.name }} – stored backups{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title"><i class="bi {{ dest.icon }} me-1"></i>{{ dest.name }}</h1>
+  <div class="text-secondary mono small">{{ dest.target_label }}</div></div>
+  <div class="actions"><a class="btn btn-light" href="{% url 'backups:index' %}"><i class="bi bi-arrow-left me-1"></i>Backups</a></div></div>
+{% if error %}<div class="alert alert-danger">Could not read the destination: {{ error }}</div>{% endif %}
+<div class="card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+  <thead><tr><th>Backup file</th><th></th></tr></thead>
+  <tbody>{% for f in files %}<tr><td class="mono">{% if ".enc" in f %}<i class="bi bi-lock-fill text-success" title="Encrypted"></i> {% endif %}{{ f }}</td>
+    <td class="text-end text-nowrap"><a class="btn btn-sm btn-outline-primary" href="{% url 'backups:download' dest.pk f %}"><i class="bi bi-download me-1"></i>Download</a>
+      <a class="btn btn-sm btn-outline-danger" href="{% url 'backups:restore' %}?dest={{ dest.pk }}&amp;file={{ f|urlencode }}"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore</a></td></tr>
+  {% empty %}{% if not error %}<tr><td colspan="2"><div class="empty-state"><i class="bi bi-inbox"></i>No backups stored here yet.</div></td></tr>{% endif %}{% endfor %}</tbody>
+</table></div></div>
+
+{% endblock %}

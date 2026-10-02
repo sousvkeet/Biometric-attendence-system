@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}My attendance{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">My attendance</h1><div class="text-secondary">{{ first|date:"F Y" }}</div></div>
+  <div class="actions"><a class="btn btn-light" href="?month={{ prev_month|date:'Y-m' }}"><i class="bi bi-chevron-left"></i></a>
+    <a class="btn btn-light" href="?month={{ next_month|date:'Y-m' }}"><i class="bi bi-chevron-right"></i></a>
+    <a class="btn btn-outline-primary" href="{% url 'selfservice:regularizations' %}">Report a missed punch</a></div></div>
+{% include "attendance/_day_table.html" %}
+{% endblock %}

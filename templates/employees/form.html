@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{% if employee %}Edit {{ employee.name }}{% else %}Register employee{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="page-title">{% if employee %}Edit {{ employee.name }}{% else %}Register new employee{% endif %}</h1>
+  <div class="actions"><a class="btn btn-light" href="{% if employee %}{{ employee.get_absolute_url }}{% else %}{% url 'employees:list' %}{% endif %}"><i class="bi bi-arrow-left me-1"></i>Back</a></div>
+</div>
+<div class="row g-3">
+<div class="col-lg-8"><div class="card"><div class="card-body">
+<form method="post">{% csrf_token %}
+  {% include "partials/form_fields.html" %}
+  <div class="mt-4"><button class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save{% if settings_obj.push_on_employee_save %} & send to devices{% endif %}</button></div>
+</form></div></div></div>
+<div class="col-lg-4"><div class="card"><div class="card-header"><i class="bi bi-info-circle me-1"></i>How registration works</div><div class="card-body small">
+  <ol class="ps-3 mb-2">
+    <li>Save the employee here. {% if settings_obj.push_on_employee_save %}The portal then adds them to every active device automatically.{% else %}Then use “Send to devices”.{% endif %}</li>
+    <li>Enroll the fingerprint: either on the device itself (Menu → User Mgt → edit user → Fingerprint), or with <strong>Remote enrollment</strong> on the employee page.</li>
+    <li>The next user sync copies the fingerprint to <strong>all other devices</strong>.</li>
+  </ol>
+  <p class="text-secondary mb-0">The device keeps only the first 24 characters of the name. Removing or deactivating an employee never deletes them from a device.</p>
+</div></div></div>
+</div>
+{% endblock %}

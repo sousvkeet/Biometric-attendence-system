@@ -1,0 +1,25 @@
+{% if form.non_field_errors %}<div class="alert alert-danger py-2">{% for e in form.non_field_errors %}{{ e }}<br>{% endfor %}</div>{% endif %}
+{% for field in form.hidden_fields %}{{ field }}{% endfor %}
+<div class="row g-3">
+{% for field in form.visible_fields %}
+  {% with wt=field.widget_type %}
+  <div class="{% if wt == 'textarea' or wt == 'checkboxselectmultiple' %}col-12{% else %}{{ col|default:'col-md-6' }}{% endif %}">
+    {% if wt == 'checkbox' %}
+      <div class="form-check form-switch mt-md-4">
+        {{ field }}<label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+      </div>
+    {% elif wt == 'checkboxselectmultiple' %}
+      <label class="form-label">{{ field.label }}</label>
+      <div class="d-flex flex-wrap gap-3">{% for cb in field %}<div class="form-check">{{ cb.tag }}<label class="form-check-label" for="{{ cb.id_for_label }}">{{ cb.choice_label }}</label></div>{% empty %}<span class="text-secondary small">No devices</span>{% endfor %}</div>
+      {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+    {% else %}
+      <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
+      {{ field }}
+      {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+    {% endif %}
+    {% for e in field.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+  </div>
+  {% endwith %}
+{% endfor %}
+</div>

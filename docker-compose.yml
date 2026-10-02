@@ -1,0 +1,69 @@
+# BioAttend on Docker:  cp .env.docker.example .env.docker  (edit it)  then  docker compose up -d --build
+# HTTPS with Caddy:      edit deploy/caddy/Caddyfile.docker, then  docker compose --profile https up -d
+name: bioattend
+
+services:
+  db:
+    image: postgres:17
+    env_file: .env.docker
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    build: .
+    image: bioattend:latest
+    command: web
+    env_file: .env.docker
+    environment:
+      FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - appdata:/data
+    ports:
+      - "${WEB_PORT:-8090}:8090"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=5)"]
+      interval: 30s
+      start_period: 40s
+      retries: 3
+    restart: unless-stopped
+
+  worker:                     # exactly one: talks to the biometric devices, runs scheduled backups
+    image: bioattend:latest
+    command: worker
+    env_file: .env.docker
+    volumes:
+      - appdata:/data
+    depends_on:
+      web:
+        condition: service_healthy
+    stop_signal: SIGINT
+    stop_grace_period: 60s
+    restart: unless-stopped
+
+  caddy:                      # optional HTTPS front end: docker compose --profile https up -d
+    image: caddy:2
+    profiles: ["https"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile.docker:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  appdata:
+  caddy_data:
+  caddy_config:

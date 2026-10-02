@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Backups{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title">Database backups</h1>
+    <div class="text-secondary">Employees, punches, settings and fingerprint templates · {{ destinations|length }} destination{{ destinations|length|pluralize }}</div></div>
+  <div class="actions">
+    {% if busy %}<a class="btn btn-outline-primary" href="{{ busy.get_absolute_url }}"><span class="spinner-border spinner-border-sm me-1"></span>Backup in progress</a>
+    {% else %}<form method="post" action="{% url 'backups:now' %}">{% csrf_token %}<button class="btn btn-primary" {% if not destinations or needs_passphrase %}disabled title="{% if needs_passphrase %}Set an encryption passphrase first{% else %}Add a destination first{% endif %}"{% endif %}><i class="bi bi-cloud-arrow-up me-1"></i>Back up now</button></form>{% endif %}
+  </div>
+</div>
+{% if needs_passphrase %}
+<div class="alert alert-warning d-flex gap-2 align-items-start"><i class="bi bi-key-fill fs-5"></i><div>
+  <strong>Set a backup passphrase before the first backup.</strong> Backups are encrypted because they contain personal data and
+  fingerprint templates. Enter a passphrase under <a href="#schedule">Schedule &amp; encryption</a> and click <em>Save</em>.
+  <strong>Write it down and keep it safe</strong> – encrypted backups cannot be restored without it.
+  (Or untick “Encrypt backup files” there, which is not recommended.)</div></div>
+{% endif %}
+{% if not worker_online %}<div class="alert alert-warning small"><i class="bi bi-exclamation-triangle me-1"></i>The background worker is not running – backups (manual and scheduled) start when it runs (<code>./run.sh</code>).</div>{% endif %}
+
+<div class="row g-3">
+  <div class="col-xl-7">
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center">Destinations
+        <div class="dropdown ms-auto">
+          <button class="btn btn-sm btn-primary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-plus-lg me-1"></i>Add destination</button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            {% for key, label in kinds %}<li><a class="dropdown-item" href="{% url 'backups:destination_create' %}?kind={{ key }}">{{ label }}</a></li>{% endfor %}
+          </ul>
+        </div>
+      </div>
+      <ul class="list-group list-group-flush">
+      {% for d in destinations %}
+        <li class="list-group-item d-flex align-items-center gap-3">
+          <i class="bi {{ d.icon }} fs-4 text-secondary"></i>
+          <div class="flex-grow-1 min-w-0">
+            <div class="fw-semibold">{{ d.name }} {% if not d.enabled %}<span class="badge bg-soft-secondary">disabled</span>{% endif %}
+              {% if d.last_status == 'ok' %}<span class="badge bg-soft-success">OK</span>{% elif d.last_status == 'error' %}<span class="badge bg-soft-danger">Error</span>{% endif %}</div>
+            <div class="small text-secondary text-truncate mono" title="{{ d.target_label }}">{{ d.target_label }}</div>
+            <div class="small {% if d.last_status == 'error' %}text-danger{% else %}text-secondary{% endif %}">
+              {% if d.last_message %}{{ d.last_message|truncatechars:120 }}{% endif %}{% if d.last_success_at %} · last backup {{ d.last_success_at|since }}{% endif %}
+              · keeps {% if d.keep_last %}last {{ d.keep_last }}{% else %}all{% endif %}</div>
+          </div>
+          <div class="text-nowrap d-flex gap-1">
+            <form method="post" action="{% url 'backups:destination_test' d.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" title="Test connection"><i class="bi bi-plug"></i> Test</button></form>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'backups:files' d.pk %}" title="Stored backups"><i class="bi bi-folder2-open"></i></a>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'backups:destination_edit' d.pk %}" title="Edit"><i class="bi bi-pencil"></i></a>
+            <form method="post" action="{% url 'backups:destination_delete' d.pk %}" data-confirm="Remove destination '{{ d.name }}'? Files already stored there are kept.">{% csrf_token %}<button class="btn btn-sm btn-outline-danger" data-no-spin title="Remove"><i class="bi bi-trash"></i></button></form>
+          </div>
+        </li>
+      {% empty %}
+        <li class="list-group-item"><div class="empty-state"><i class="bi bi-cloud-plus"></i>No destinations yet. Add a local folder, S3, FTP/FTPS, SFTP or WebDAV destination.</div></li>
+      {% endfor %}
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-header">History</div>
+      {% with top=1 %}{% endwith %}
+      <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+        <thead><tr><th>#</th><th>Started</th><th>Status</th><th>File</th><th>Size</th><th>Destinations</th><th>By</th></tr></thead>
+        <tbody>{% for r in page %}<tr>
+          <td><a href="{{ r.get_absolute_url }}">#{{ r.pk }}</a></td>
+          <td class="small text-nowrap">{{ r.created_at|dtime:"d M Y" }}</td>
+          <td>{% status_badge r.status %}</td>
+          <td class="small mono text-truncate" style="max-width:260px" title="{{ r.file_name }}">{% if r.encrypted %}<i class="bi bi-lock-fill text-success" title="Encrypted"></i> {% endif %}{% if "-nologins." in r.file_name %}<i class="bi bi-person-slash text-secondary" title="Without login details"></i> {% endif %}{{ r.file_name|default:"—" }}</td>
+          <td class="small text-nowrap">{% if r.size %}{{ r.size|filesizeformat }}{% endif %}</td>
+          <td class="small">{% for key, res in r.results.items %}<span class="badge {% if res.ok %}bg-soft-success{% else %}bg-soft-danger{% endif %} me-1" title="{{ res.message }}">{{ res.name }}</span>{% endfor %}</td>
+          <td class="small">{% if r.trigger == 'scheduled' %}<span class="text-secondary">schedule</span>{% else %}{{ r.created_by|default:"" }}{% endif %}</td></tr>
+        {% empty %}<tr><td colspan="7"><div class="empty-state">No backups yet.</div></td></tr>{% endfor %}</tbody>
+      </table></div>
+    </div>
+    {% include "partials/pagination.html" %}
+  </div>
+
+  <div class="col-xl-5">
+    <div class="card mb-3 {% if needs_passphrase %}border-warning{% endif %}" id="schedule"><div class="card-header">Schedule &amp; encryption</div><div class="card-body">
+      <form method="post">{% csrf_token %}
+        {% with col='col-md-6' %}{% include "partials/form_fields.html" %}{% endwith %}
+        <div class="mt-3 d-flex align-items-center gap-3"><button class="btn btn-primary">Save</button>
+          {% if next_run %}<span class="small text-secondary">Next automatic backup: <strong>{{ next_run|dtime:"D d M" }}</strong></span>{% endif %}</div>
+      </form>
+    </div></div>
+    {% if last_restore %}
+    <div class="alert {% if last_restore.ok %}alert-success{% else %}alert-danger{% endif %} small">
+      <strong>Last restore {% if last_restore.ok %}succeeded{% else %}failed{% endif %}:</strong> {{ last_restore.message }}</div>
+    {% endif %}
+    <div class="card mb-3"><div class="card-header"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore</div><div class="card-body small">
+      <p class="mb-2">Choose a backup to restore with the <i class="bi bi-folder2-open"></i> button of a destination (each stored backup has a <strong>Restore</strong> button), or upload a backup file:</p>
+      <form method="post" action="{% url 'backups:restore_upload' %}" enctype="multipart/form-data" class="d-flex gap-2 mb-3">{% csrf_token %}
+        <input type="file" name="backup_file" class="form-control form-control-sm" accept=".gz,.enc,.pgdump,.sqlite3" required>
+        <button class="btn btn-sm btn-outline-danger text-nowrap"><i class="bi bi-upload me-1"></i>Upload &amp; restore…</button></form>
+      <div class="fw-semibold mb-1">Undo a restore (safety copies)</div>
+      {% for name, size, when in safety_copies %}
+        <div class="d-flex align-items-center gap-2 py-1 border-top"><span class="mono flex-grow-1">{{ when|dtime:"d M Y" }}</span><span class="text-secondary">{{ size|filesizeformat }}</span>
+          <a class="btn btn-sm btn-outline-secondary" href="{% url 'backups:restore' %}?safety={{ name|urlencode }}">Restore</a></div>
+      {% empty %}<div class="text-secondary">None yet – one is saved automatically before every restore (last 5 kept).</div>{% endfor %}
+    </div></div>
+    <div class="card"><div class="card-header"><i class="bi bi-life-preserver me-1"></i>Restoring from the command line</div><div class="card-body small">
+      <ol class="ps-3 mb-2">
+        <li>Stop the portal (Ctrl+C on <code>./run.sh</code>, or <code>pm2 stop all</code>).</li>
+        <li>Run one of:
+          <pre class="bg-light p-2 rounded mt-1 mb-1 small">.venv/bin/python manage.py restore_backup --destination "NAME" --list
+.venv/bin/python manage.py restore_backup --destination "NAME" --latest
+.venv/bin/python manage.py restore_backup /path/to/bioattend-backup-….gz.enc</pre></li>
+        <li>Start the portal again.</li>
+      </ol>
+      <p class="mb-0 text-secondary">The file is verified first and a safety copy of the current database is kept in <code>var/backups/pre-restore/</code>. Encrypted backups need the passphrase.</p>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

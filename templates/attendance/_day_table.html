@@ -1,0 +1,20 @@
+{% load app_tags %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-2"><div class="card stat-card py-2"><div><div class="value">{{ summary.present_days }}</div><div class="label">Present days</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card stat-card py-2"><div><div class="value text-danger">{{ summary.A|default:0 }}</div><div class="label">Absent</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card stat-card py-2"><div><div class="value text-info">{{ summary.L|default:0 }}</div><div class="label">Leave</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card stat-card py-2"><div><div class="value text-warning">{{ summary.late }}</div><div class="label">Late</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card stat-card py-2"><div><div class="value">{{ summary.worked }}</div><div class="label">Hours worked</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card stat-card py-2"><div><div class="value">{{ summary.overtime }}</div><div class="label">Overtime</div></div></div></div>
+</div>
+<div class="card"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+  <thead><tr><th>Date</th><th>Shift</th><th>Status</th><th>In</th><th>Out</th><th>Worked</th><th>Late</th><th>Early</th><th>OT</th><th>All punches</th></tr></thead>
+  <tbody>{% for r in recs %}<tr class="{% if r.status == 'WO' or r.status == 'H' %}table-light{% endif %}">
+    <td class="text-nowrap">{{ r.date|date:"D d M" }}</td>
+    <td class="small text-nowrap">{% if r.punches %}{{ r.shift_name }}{% if r.shift_auto %} <span class="badge bg-soft-info">auto</span>{% endif %}<div class="text-secondary">{{ r.shift_window }}</div>{% endif %}</td>
+    <td><span class="st st-{{ r.status }} {% if r.is_late %}st-late{% endif %} {% if r.out_missing %}st-missing{% endif %}">{{ r.code|default:"–" }}</span> <span class="small text-secondary">{{ r.label }}{% if r.holiday_name %} – {{ r.holiday_name }}{% endif %}{% if r.note %} ({{ r.note }}){% endif %}</span></td>
+    <td>{{ r.first_in|hm }}</td><td>{% if r.last_out %}{{ r.last_out|hm }}{% elif r.out_missing %}<span class="badge bg-soft-danger" title="Shift ends {{ r.expected_out|hm }}">Missing</span>{% elif r.in_progress %}<span class="badge bg-soft-success">In office</span>{% endif %}</td><td>{{ r.worked }}</td>
+    <td class="text-warning-emphasis">{% if r.is_late %}{{ r.late_minutes|minutes }}{% endif %}</td>
+    <td class="text-warning-emphasis">{% if r.is_early %}{{ r.early_minutes|minutes }}{% endif %}</td><td>{{ r.overtime }}</td>
+    <td class="small mono text-secondary">{% for p in r.punches %}{{ p|hm }}{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>{% endfor %}</tbody>
+</table></div></div>

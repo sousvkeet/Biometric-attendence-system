@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Live monitor{% endblock %}
+{% block content %}
+<div class="monitor" id="monitor" data-live-feed="{% url 'live_feed' %}" data-max="25" data-toasts="0">
+  <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+    <div>
+      <div class="monitor-clock" id="monitorClock" data-12h="{% if time_12h %}1{% endif %}">--:--:--</div>
+      <div class="text-secondary">{{ today|date:"l, d F Y" }} · {{ company_name }}</div>
+    </div>
+    <span class="live-indicator ms-2" data-live-indicator><span class="pulse"></span><span class="label">Connecting</span></span>
+    <div class="ms-auto d-flex gap-2 no-print">
+      <button class="btn btn-light" id="fsBtn"><i class="bi bi-arrows-fullscreen me-1"></i>Full screen</button>
+    </div>
+  </div>
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3"><div class="card stat-card"><div class="icon bg-soft-success"><i class="bi bi-person-check"></i></div>
+      <div><div class="value" data-count="present">–</div><div class="label">Present</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card stat-card"><div class="icon bg-soft-danger"><i class="bi bi-person-x"></i></div>
+      <div><div class="value" data-count="absent">–</div><div class="label">Not punched</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card stat-card"><div class="icon bg-soft-warning"><i class="bi bi-alarm"></i></div>
+      <div><div class="value" data-count="late">–</div><div class="label">Late</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card stat-card"><div class="icon bg-soft-info"><i class="bi bi-airplane"></i></div>
+      <div><div class="value" data-count="leave">–</div><div class="label">On leave</div></div></div></div>
+  </div>
+  <div class="card">
+    <div class="card-header d-flex align-items-center gap-2"><span>Punches as they happen</span><span class="ms-auto" data-live-devices></span></div>
+    <div class="punch-list"></div>
+    <div class="punch-empty empty-state d-none"><i class="bi bi-fingerprint"></i>Waiting for the first punch of the day…</div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{% static 'js/live.js' %}"></script>
+<script>
+const clock = document.getElementById("monitorClock");
+const h12 = clock.dataset["12h"] === "1";
+setInterval(() => { clock.textContent = new Date().toLocaleTimeString(h12 ? "en-US" : "en-GB", { hour12: h12 }); }, 1000);
+document.getElementById("fsBtn").addEventListener("click", () => {
+  const el = document.getElementById("monitor");
+  if (!document.fullscreenElement) { el.requestFullscreen(); el.style.background = "#f4f6f2"; el.style.padding = "1.5rem"; el.style.overflow = "auto"; }
+  else document.exitFullscreen();
+});
+</script>
+{% endblock %}

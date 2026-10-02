@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Missed punch requests{% endblock %}
+{% block content %}
+<div class="page-head"><h1 class="page-title">Missed punch requests</h1>
+  <div class="actions">{% for k, v in statuses %}<a class="btn btn-sm {% if status == k %}btn-primary{% else %}btn-light{% endif %}" href="?status={{ k }}">{{ v }}</a>{% endfor %}
+    <a class="btn btn-sm {% if status == 'all' %}btn-primary{% else %}btn-light{% endif %}" href="?status=all">All</a></div></div>
+<p class="text-secondary small">Approving a request adds a punch in the portal (marked “Regularization”). Devices are not changed.</p>
+<div class="card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+  <thead><tr><th>Employee</th><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+  <tbody>{% for r in page %}<tr>
+    <td><a href="{% url 'attendance:employee_card' r.employee.pk %}?month={{ r.date|date:'Y-m' }}">{{ r.employee.name }}</a></td>
+    <td>{{ r.date|date:"D d M Y" }}</td><td>{{ r.time|hm }}</td><td>{{ r.get_punch_state_display }}</td>
+    <td class="small">{{ r.reason|truncatechars:90 }}</td>
+    <td>{% status_badge r.status %}{% if r.reviewed_by %}<div class="small text-secondary">{{ r.reviewed_by }}{% if r.review_note %}: {{ r.review_note }}{% endif %}</div>{% endif %}</td>
+    <td class="text-end text-nowrap">{% if r.status == 'pending' %}
+      <form method="post" action="{% url 'attendance:regularization_review' r.pk %}" class="d-inline-flex gap-1">{% csrf_token %}
+        <input name="note" class="form-control form-control-sm" placeholder="Note" style="width:120px">
+        <button class="btn btn-sm btn-success" name="decision" value="approve">Approve</button>
+        <button class="btn btn-sm btn-outline-danger" name="decision" value="reject">Reject</button></form>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="7"><div class="empty-state"><i class="bi bi-pencil-square"></i>No requests.</div></td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}

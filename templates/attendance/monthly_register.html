@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Monthly register{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">Monthly attendance register</h1><div class="text-secondary">{{ first|date:"F Y" }}</div></div>
+  <div class="actions no-print">
+    <a class="btn btn-light" href="?{% query_replace month=prev_month|date:'Y-m' %}"><i class="bi bi-chevron-left"></i></a>
+    <a class="btn btn-light" href="?{% query_replace month=next_month|date:'Y-m' %}"><i class="bi bi-chevron-right"></i></a>
+    <button class="btn btn-light" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+    <a class="btn btn-light" href="?{% query_replace export='xlsx' %}"><i class="bi bi-file-earmark-excel me-1"></i>Excel</a></div></div>
+<form class="filter-bar row g-2 align-items-end">
+  <div class="col-md-2"><input type="month" class="form-control" name="month" value="{{ first|date:'Y-m' }}"></div>
+  {% include "attendance/_report_filters.html" %}
+  <div class="col-auto"><button class="btn btn-outline-primary">Show</button></div>
+  <div class="col small text-secondary text-end">P present · A absent · HD half day · <span class="st st-P st-missing">P</span> OUT missing · L/CL/SL leave · H holiday · WO weekly off · <span class="st st-P st-late">P</span> late</div>
+</form>
+<div class="card"><div class="table-responsive">
+<table class="table table-bordered register mb-0">
+  <thead><tr><th class="name">Employee</th>{% for d in days %}<th class="{% if d.weekday == 6 or d in holidays %}off{% endif %}">{{ d|date:"d" }}<br><span class="fw-normal">{{ d|date:"D"|slice:":2" }}</span></th>{% endfor %}
+    <th>P</th><th>A</th><th>L</th><th>Late</th><th title="OUT punch missing">No&nbsp;OUT</th><th>Hours</th></tr></thead>
+  <tbody>{% for e, recs, s in rows %}<tr>
+    <td class="name"><a href="{% url 'attendance:employee_card' e.pk %}?month={{ first|date:'Y-m' }}">{{ e.name|truncatechars:24 }}</a> <span class="text-secondary mono">{{ e.device_user_id }}</span></td>
+    {% for r in recs %}<td title="{{ r.date|date:'d M' }}: {{ r.label }}{% if r.first_in %} {{ r.first_in|hm }}{% endif %}{% if r.last_out %}-{{ r.last_out|hm }}{% endif %}">{% if r.status %}<span class="st st-{{ r.status }} {% if r.is_late %}st-late{% endif %} {% if r.out_missing %}st-missing{% endif %}">{{ r.code }}</span>{% endif %}</td>{% endfor %}
+    <td class="fw-semibold">{{ s.present_days }}</td><td>{{ s.A|default:0 }}</td><td>{{ s.L|default:0 }}</td><td>{{ s.late }}</td><td class="{% if s.out_missing %}text-danger fw-semibold{% endif %}">{{ s.out_missing|default:0 }}</td><td>{{ s.worked }}</td></tr>
+  {% empty %}<tr><td colspan="40"><div class="empty-state">No employees.</div></td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Daily report{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">Daily attendance</h1><div class="text-secondary">{{ day|date:"l, d F Y" }}</div></div>
+  <div class="actions no-print">
+    <a class="btn btn-light" href="?{% query_replace date=prev_day|date:'Y-m-d' %}"><i class="bi bi-chevron-left"></i></a>
+    <a class="btn btn-light" href="?{% query_replace date=next_day|date:'Y-m-d' %}"><i class="bi bi-chevron-right"></i></a>
+    <button class="btn btn-light" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print</button>
+    <a class="btn btn-light" href="?{% query_replace export='xlsx' %}"><i class="bi bi-file-earmark-excel me-1"></i>Excel</a></div></div>
+<form class="filter-bar row g-2 align-items-end">
+  <div class="col-md-2"><input type="date" class="form-control" name="date" value="{{ day|date:'Y-m-d' }}"></div>
+  {% include "attendance/_report_filters.html" %}
+  <div class="col-md-2"><select class="form-select" name="status"><option value="">All statuses</option>{% for k, v in status_choices %}<option value="{{ k }}" {% if status == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+  <div class="col-auto"><button class="btn btn-outline-primary">Show</button></div>
+</form>
+<div class="d-flex flex-wrap gap-2 mb-3 small">
+  <span class="badge bg-soft-success">Present {{ summary.P|default:0 }}</span><span class="badge bg-soft-danger">Absent {{ summary.A|default:0 }}</span>
+  <span class="badge bg-soft-warning">Half day {{ summary.HD|default:0 }}</span><span class="badge bg-soft-danger">OUT missing {{ summary.out_missing|default:0 }}</span>
+  <span class="badge bg-soft-info">Leave {{ summary.L|default:0 }}</span><span class="badge bg-soft-warning">Late {{ summary.late }}</span>
+  <span class="badge bg-soft-secondary">Off {{ summary.off }}</span>
+</div>
+<div class="card"><div class="table-responsive">
+<table class="table table-sm table-hover align-middle mb-0">
+  <thead><tr><th>ID</th><th>Name</th><th>Department</th><th>Shift</th><th>In</th><th>Out</th><th>Worked</th><th>Late</th><th>Early</th><th>OT</th><th>Status</th><th class="text-center">Punches</th></tr></thead>
+  <tbody>{% for e, r in rows %}<tr>
+    <td class="mono">{{ e.device_user_id }}</td><td><a href="{% url 'attendance:employee_card' e.pk %}">{{ e.name }}</a></td>
+    <td class="small">{{ e.department|default:"" }}</td><td class="small">{{ r.shift_name }}{% if r.shift_auto %} <span class="badge bg-soft-info">auto</span>{% endif %}<div class="text-secondary">{{ r.shift_window }}</div></td>
+    <td>{{ r.first_in|hm }}</td><td>{% if r.last_out %}{{ r.last_out|hm }}{% elif r.out_missing %}<span class="badge text-bg-danger" title="Shift ends {{ r.expected_out|hm }}">Missing</span>{% elif r.in_progress %}<span class="badge bg-soft-success">In office</span>{% endif %}</td><td>{{ r.worked }}</td>
+    <td class="text-warning-emphasis">{% if r.is_late %}{{ r.late_minutes|minutes }}{% endif %}</td>
+    <td class="text-warning-emphasis">{% if r.is_early %}{{ r.early_minutes|minutes }}{% endif %}</td><td>{{ r.overtime }}</td>
+    <td><span class="st st-{{ r.status }}">{{ r.code|default:"–" }}</span> <span class="small text-secondary">{{ r.label }}{% if r.holiday_name %} – {{ r.holiday_name }}{% endif %}</span></td>
+    <td class="text-center small" title="{% for p in r.punches %}{{ p|hm }} {% endfor %}">{{ r.punches|length }}</td></tr>
+  {% empty %}<tr><td colspan="12"><div class="empty-state">No employees match.</div></td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

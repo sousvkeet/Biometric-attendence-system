@@ -1,0 +1,23 @@
+# /etc/systemd/system/bioattend-web.service  – the website (gunicorn)
+[Unit]
+Description=BioAttend web portal
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bioattend
+Group=bioattend
+WorkingDirectory=/opt/bioattend
+ExecStartPre=/opt/bioattend/.venv/bin/python manage.py migrate --noinput
+ExecStart=/opt/bioattend/.venv/bin/gunicorn -c deploy/gunicorn.conf.py config.wsgi:application
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

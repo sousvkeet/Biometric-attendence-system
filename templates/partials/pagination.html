@@ -1,0 +1,25 @@
+{% load app_tags %}
+{% if page.paginator.count %}
+<nav class="pager no-print {% if top %}pager-top{% else %}mt-3{% endif %}">
+  <div class="small text-secondary">Showing <strong>{{ page.start_index }}–{{ page.end_index }}</strong> of <strong>{{ page.paginator.count }}</strong></div>
+  <div class="d-flex align-items-center gap-2 ms-auto flex-wrap">
+    {% if page.per_page_choices %}
+    <label class="small text-secondary mb-0">Show</label>
+    <select class="form-select form-select-sm w-auto" onchange="window.location.href = this.value" aria-label="Rows per page">
+      {% for n in page.per_page_choices %}<option value="?{% query_replace per_page=n page=None %}" {% if page.per_page_value == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      {% if page.allow_all %}<option value="?{% query_replace per_page='all' page=None %}" {% if page.per_page_value == 'all' %}selected{% endif %}>All</option>{% endif %}
+    </select>
+    <span class="small text-secondary">per page</span>
+    {% endif %}
+    {% if page.paginator.num_pages > 1 %}
+    <ul class="pagination pagination-sm mb-0 ms-2">
+      <li class="page-item {% if not page.has_previous %}disabled{% endif %}"><a class="page-link" href="?{% query_replace page=1 %}" title="First page">«</a></li>
+      <li class="page-item {% if not page.has_previous %}disabled{% endif %}"><a class="page-link" href="{% if page.has_previous %}?{% query_replace page=page.previous_page_number %}{% else %}#{% endif %}" title="Previous">‹</a></li>
+      <li class="page-item active"><span class="page-link">{{ page.number }} / {{ page.paginator.num_pages }}</span></li>
+      <li class="page-item {% if not page.has_next %}disabled{% endif %}"><a class="page-link" href="{% if page.has_next %}?{% query_replace page=page.next_page_number %}{% else %}#{% endif %}" title="Next">›</a></li>
+      <li class="page-item {% if not page.has_next %}disabled{% endif %}"><a class="page-link" href="?{% query_replace page=page.paginator.num_pages %}" title="Last page">»</a></li>
+    </ul>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}

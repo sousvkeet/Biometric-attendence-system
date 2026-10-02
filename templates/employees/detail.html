@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}{{ employee.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title">{{ employee.name }} {% status_badge employee.status %}</h1>
+    <div class="text-secondary">ID <span class="mono">{{ employee.device_user_id }}</span> · {{ employee.department|default:"No department" }} · {{ employee.designation|default:"" }}</div></div>
+  <div class="actions">
+    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#enrollModal" {% if not employee.is_active %}disabled{% endif %}><i class="bi bi-fingerprint me-1"></i>Register fingerprint</button>
+    <a class="btn btn-light" href="{% url 'attendance:employee_card' employee.pk %}"><i class="bi bi-calendar3 me-1"></i>Attendance card</a>
+    <a class="btn btn-light" href="{% url 'attendance:manual_punch' %}?employee={{ employee.pk }}"><i class="bi bi-plus-circle me-1"></i>Manual punch</a>
+    <a class="btn btn-light" href="{% url 'employees:login' employee.pk %}"><i class="bi bi-key me-1"></i>Self-service login</a>
+    <a class="btn btn-outline-primary" href="{% url 'employees:edit' employee.pk %}"><i class="bi bi-pencil me-1"></i>Edit</a>
+    <a class="btn btn-outline-danger" href="{% url 'employees:delete' employee.pk %}" title="Delete from the portal (devices are not changed)"><i class="bi bi-trash"></i></a>
+    <form method="post" action="{% url 'employees:push' employee.pk %}">{% csrf_token %}
+      <button class="btn btn-primary" {% if not employee.is_active %}disabled{% endif %}><i class="bi bi-cloud-upload me-1"></i>Send to devices</button></form>
+  </div>
+</div>
+<div class="row g-3">
+  <div class="col-xl-4">
+    <div class="card mb-3"><div class="card-header">Details</div>
+      <div class="card-body"><div class="info-grid">
+        <div class="item"><div class="k">Shift</div><div class="v">{{ employee.shift_label }}</div></div>
+        <div class="item"><div class="k">Join date</div><div class="v">{{ employee.join_date|date:"d M Y"|default:"—" }}</div></div>
+        <div class="item"><div class="k">Email</div><div class="v text-break">{{ employee.email|default:"—" }}</div></div>
+        <div class="item"><div class="k">Phone</div><div class="v">{{ employee.phone|default:"—" }}</div></div>
+        <div class="item"><div class="k">Card</div><div class="v">{{ employee.card_number|default:"—" }}</div></div>
+        <div class="item"><div class="k">Device password</div><div class="v">{% if employee.device_password %}set{% else %}—{% endif %}</div></div>
+        <div class="item"><div class="k">Device privilege</div><div class="v">{{ employee.get_privilege_display }}</div></div>
+        <div class="item"><div class="k">Login</div><div class="v">{% if employee.user %}{{ employee.user.username }}{% if not employee.user.is_active %} (disabled){% endif %}{% else %}—{% endif %}</div></div>
+      </div>{% if employee.notes %}<p class="small mt-3 mb-0">{{ employee.notes|linebreaksbr }}</p>{% endif %}</div></div>
+
+    <div class="card mb-3"><div class="card-header d-flex align-items-center"><i class="bi bi-fingerprint me-1"></i>Fingerprints in portal<span class="badge bg-soft-success ms-auto">{{ fingerprints|length }}</span></div>
+      <ul class="list-group list-group-flush">
+        {% for f in fingerprints %}<li class="list-group-item small d-flex"><span>{{ f.finger_name }}</span>
+          <span class="ms-auto text-secondary">{{ f.size }} B · from {{ f.source_device|default:"enrollment" }}</span></li>
+        {% empty %}<li class="list-group-item small text-secondary">No fingerprints yet. Enroll on a device or use remote enrollment below.</li>{% endfor %}
+      </ul>
+      <div class="card-body border-top">
+        <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#enrollModal" {% if not employee.is_active %}disabled{% endif %}>
+          <i class="bi bi-fingerprint me-1"></i>Register fingerprint</button>
+        <div class="form-text">The device shows its fingerprint screen; the progress appears here live. The fingerprint is then copied to the other devices.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-8">
+    <div class="card mb-3"><div class="card-header">Registration on devices</div>
+      <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Device</th><th>Should be on it</th><th>On device</th><th>Device uid</th><th>Fingers on device</th><th>Last checked</th></tr></thead>
+        <tbody>{% for r in device_rows %}<tr>
+          <td><span class="dot dot-{{ r.device.status }} me-1"></span><a href="{{ r.device.get_absolute_url }}">{{ r.device.name }}</a>{% if not r.device.is_active %} <span class="text-secondary small">(disabled)</span>{% endif %}</td>
+          <td>{% if r.target %}<i class="bi bi-check-lg text-success"></i>{% else %}<span class="text-secondary">no</span>{% endif %}</td>
+          <td>{% if r.link %}<span class="badge bg-soft-success">Yes</span>{% elif r.target %}<span class="badge bg-soft-warning">Not yet</span>{% else %}—{% endif %}</td>
+          <td class="mono">{{ r.link.uid|default:"" }}</td>
+          <td>{% if r.link %}{{ r.link.finger_list|length }}{% endif %}</td>
+          <td class="small text-secondary">{{ r.link.synced_at|since|default:"" }}</td></tr>
+        {% empty %}<tr><td colspan="6" class="text-secondary">No devices configured.</td></tr>{% endfor %}</tbody></table></div></div>
+
+    <div class="card mb-3"><div class="card-header d-flex align-items-center">This month
+      <span class="ms-auto small">Present {{ summary.present_days }} · Absent {{ summary.A|default:0 }} · Late {{ summary.late }} · Worked {{ summary.worked }}</span></div>
+      <div class="table-responsive" style="max-height:380px"><table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Date</th><th>Status</th><th>In</th><th>Out</th><th>Worked</th><th>Late</th><th>OT</th></tr></thead>
+        <tbody>{% for r in month_days %}<tr><td class="text-nowrap">{{ r.date|date:"D d M" }}</td>
+          <td><span class="st st-{{ r.status }} {% if r.is_late %}st-late{% endif %}">{{ r.code|default:"–" }}</span> <span class="small text-secondary">{{ r.label }}</span></td>
+          <td>{{ r.first_in|hm }}</td><td>{{ r.last_out|hm }}</td><td>{{ r.worked }}</td>
+          <td class="text-warning-emphasis">{% if r.is_late %}{{ r.late_minutes|minutes }}{% endif %}</td><td>{{ r.overtime }}</td></tr>{% endfor %}</tbody></table></div></div>
+
+    <div class="card mb-3"><div class="card-header">Recent punches</div>
+      <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Time</th><th>Device</th><th>Verify</th><th>Source</th></tr></thead>
+      <tbody>{% for l in recent_logs %}<tr><td>{{ l.punch_time|dtimes:"D d M Y," }}</td><td>{{ l.device.name|default:"—" }}</td><td>{{ l.verify_label }}</td><td>{{ l.get_source_display }}</td></tr>
+      {% empty %}<tr><td colspan="4" class="text-secondary">No punches.</td></tr>{% endfor %}</tbody></table></div></div>
+
+    {% if jobs %}<div class="card"><div class="card-header">Device jobs for this employee</div><ul class="list-group list-group-flush">
+      {% for j in jobs %}<li class="list-group-item small d-flex gap-2"><a href="{{ j.get_absolute_url }}">#{{ j.pk }}</a>{{ j.get_job_type_display }}
+        <span class="text-secondary">{{ j.created_at|dtime:"d M" }}</span><span class="ms-auto">{% status_badge j.status %}</span></li>{% endfor %}</ul></div>{% endif %}
+  </div>
+</div>
+{% include "employees/_enroll_modal.html" %}
+{% endblock %}
+{% block scripts %}{% include "employees/_enroll_script.html" %}{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Manual punch{% endblock %}
+{% block content %}
+<div class="page-head"><h1 class="page-title">Add manual punch</h1>
+  <div class="actions"><a class="btn btn-light" href="{% url 'attendance:logs' %}"><i class="bi bi-arrow-left me-1"></i>Back</a></div></div>
+<div class="card" style="max-width:720px"><div class="card-body">
+  <p class="small text-secondary">Manual punches are stored only in the portal (not on the devices), are marked as “Manual entry” and are recorded in the activity log.</p>
+  <form method="post">{% csrf_token %}<input type="hidden" name="next" value="{{ next }}">{% include "partials/form_fields.html" %}
+    <div class="mt-4"><button class="btn btn-primary">Add punch</button></div></form>
+</div></div>
+{% endblock %}

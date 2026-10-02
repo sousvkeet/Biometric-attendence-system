@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}{{ device.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title"><span class="dot dot-{{ device.status }} me-2"></span>{{ device.name }}
+    {% if device.read_only %}<span class="badge bg-soft-secondary fs-6 align-middle"><i class="bi bi-lock"></i> read-only</span>{% endif %}</h1>
+    <div class="text-secondary">{{ device.ip_address }}:{{ device.port }} · {{ device.area }} · {{ device.get_driver_display }} · last seen {{ device.last_seen|since }}</div></div>
+  <div class="actions"><a class="btn btn-outline-primary" href="{% url 'devices:edit' device.pk %}"><i class="bi bi-pencil me-1"></i>Edit</a></div>
+</div>
+{% if device.last_error %}<div class="alert alert-danger small"><i class="bi bi-exclamation-octagon me-1"></i>{{ device.last_error }}</div>{% endif %}
+{% if device.read_only %}<div class="alert alert-secondary small"><i class="bi bi-lock me-1"></i>Write protection is on: the portal only reads attendance and users from this device and never writes to it. Turn it off in <a href="{% url 'devices:edit' device.pk %}">Edit</a> to send employees and fingerprints to this device.</div>{% endif %}
+
+<div class="card mb-3"><div class="card-body d-flex flex-wrap gap-2">
+  {% for key, a in actions.items %}
+    <form method="post" action="{% url 'devices:action' device.pk key %}">{% csrf_token %}
+      <button class="btn {% if key == 'pull_attendance' %}btn-primary{% else %}btn-outline-primary{% endif %}" {% if a.1 and device.read_only %}disabled title="Write protection is on"{% endif %}>
+        <i class="bi {% if key == 'refresh' %}bi-plug{% elif key == 'pull_users' %}bi-person-down{% elif key == 'push_users' %}bi-person-up{% elif key == 'preview_push' %}bi-eye{% elif key == 'pull_attendance' %}bi-cloud-download{% else %}bi-clock{% endif %} me-1"></i>{{ a.2 }}</button></form>
+  {% endfor %}
+  <form method="post" action="{% url 'devices:action' device.pk 'pull_attendance' %}">{% csrf_token %}<input type="hidden" name="force" value="1">
+    <button class="btn btn-light" title="Re-read every record even if the count did not change"><i class="bi bi-arrow-clockwise me-1"></i>Full re-download</button></form>
+</div></div>
+
+<div class="row g-3">
+<div class="col-xl-5">
+  <div class="card mb-3"><div class="card-header">Device data</div><div class="card-body"><div class="info-grid">
+    <div class="item"><div class="k">Device model</div><div class="v">{{ device.device_model|default:"–" }}</div></div>
+    <div class="item"><div class="k">Serial number</div><div class="v mono">{{ device.serial_number|default:"–" }}</div></div>
+    <div class="item"><div class="k">Platform</div><div class="v">{{ device.platform|default:"–" }}</div></div>
+    <div class="item"><div class="k">Firmware</div><div class="v">{{ device.firmware|default:"–" }}</div></div>
+    <div class="item"><div class="k">Fingerprint version</div><div class="v">{{ device.fp_version|default:"–" }}</div></div>
+    <div class="item"><div class="k">MAC</div><div class="v mono">{{ device.mac_address|default:"–" }}</div></div>
+    <div class="item"><div class="k">Users</div><div class="v">{{ device.user_count|default:"–" }}{% if device.user_capacity %} / {{ device.user_capacity }}{% endif %}</div></div>
+    <div class="item"><div class="k">Admins</div><div class="v">{{ device.admin_count|default:"–" }}</div></div>
+    <div class="item"><div class="k">Fingerprints</div><div class="v">{{ device.fingerprint_count|default:"–" }}{% if device.fingerprint_capacity %} / {{ device.fingerprint_capacity }}{% endif %}</div>
+      {% if device.fingerprint_free is not None and device.fingerprint_free < 50 %}<div class="small text-danger">Only {{ device.fingerprint_free }} free</div>{% endif %}</div>
+    <div class="item"><div class="k">Faces</div><div class="v">{{ device.face_count|default:"0" }}</div></div>
+    <div class="item"><div class="k">Cards</div><div class="v">{{ device.card_count|default:"0" }}</div></div>
+    <div class="item"><div class="k">Transactions</div><div class="v">{{ device.record_count|default:"–" }}{% if device.record_capacity %} / {{ device.record_capacity }}{% endif %}</div></div>
+    <div class="item"><div class="k">Device clock</div><div class="v">{{ device.device_time|dtimes:"d M"|default:"–" }}</div><div class="small text-secondary">{{ device.clock_drift_display }}</div></div>
+    <div class="item"><div class="k">Punches in portal</div><div class="v">{{ log_count }}</div></div>
+    <div class="item"><div class="k">Last attendance sync</div><div class="v">{{ device.last_attendance_sync|since }}</div></div>
+    <div class="item"><div class="k">Last user sync</div><div class="v">{{ device.last_user_sync|since }}</div></div>
+  </div></div></div>
+
+  {% if punch_form %}
+  <div class="card mb-3"><div class="card-header"><i class="bi bi-joystick me-1"></i>Simulator: add a punch</div><div class="card-body">
+    <form method="post" action="{% url 'devices:simulate_punch' device.pk %}" class="row g-2">{% csrf_token %}
+      <div class="col-5">{{ punch_form.user_id }}</div><div class="col-7">{{ punch_form.when }}</div>
+      <div class="col-12"><button class="btn btn-sm btn-outline-primary">Add punch to simulator</button></div></form></div></div>
+  {% endif %}
+
+  <div class="card mb-3"><div class="card-header">Recent jobs</div><ul class="list-group list-group-flush">
+    {% for j in jobs %}<li class="list-group-item small d-flex gap-2"><a href="{{ j.get_absolute_url }}">#{{ j.pk }}</a>{{ j.get_job_type_display }}
+      <span class="text-secondary">{{ j.created_at|since }}</span><span class="ms-auto">{% status_badge j.status %}</span></li>
+    {% empty %}<li class="list-group-item small text-secondary">No jobs yet.</li>{% endfor %}</ul></div>
+
+  <div class="card"><div class="card-header">Latest punches from this device</div><ul class="list-group list-group-flush">
+    {% for l in recent_logs %}<li class="list-group-item small d-flex"><span>{{ l.employee.name|default:l.device_user_id }}</span><span class="ms-auto text-secondary">{{ l.punch_time|dtimes:"d M" }}</span></li>
+    {% empty %}<li class="list-group-item small text-secondary">None yet.</li>{% endfor %}</ul></div>
+</div>
+
+<div class="col-xl-7">
+  {% if missing_count and device.is_active %}
+  <div class="card mb-3 border-warning"><div class="card-header d-flex align-items-center"><i class="bi bi-exclamation-triangle text-warning me-1"></i>{{ missing_count }} employee{{ missing_count|pluralize }} not on this device yet
+    {% if not device.read_only %}<form method="post" action="{% url 'devices:action' device.pk 'push_users' %}" class="ms-auto">{% csrf_token %}<button class="btn btn-sm btn-primary">Upload now</button></form>{% endif %}</div>
+    <div class="card-body small">{% for e in missing %}<a href="{{ e.get_absolute_url }}">{{ e.name }}</a> <span class="mono text-secondary">#{{ e.device_user_id }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}{% if missing_count > 50 %} …{% endif %}</div></div>
+  {% endif %}
+  <div class="card"><div class="card-header d-flex align-items-center">Users on this device (as of last sync)
+    <form class="ms-auto d-flex gap-1"><input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="Search"><button class="btn btn-sm btn-light"><i class="bi bi-search"></i></button></form></div>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr><th>uid</th><th>User ID</th><th>Name on device</th><th>Employee</th><th>Privilege</th><th class="text-center"><i class="bi bi-fingerprint"></i></th><th>Card</th></tr></thead>
+      <tbody>{% for l in links_page %}<tr><td class="mono text-secondary">{{ l.uid }}</td><td class="mono">{{ l.employee.device_user_id }}</td>
+        <td>{{ l.device_name }}</td><td><a href="{{ l.employee.get_absolute_url }}">{{ l.employee.name }}</a>{% if l.employee.status == 'inactive' %} <span class="badge bg-soft-secondary">inactive</span>{% endif %}</td>
+        <td class="small">{% if l.privilege %}<span class="badge bg-soft-warning">{% if l.privilege == 14 %}Super admin{% elif l.privilege == 6 %}Manager{% elif l.privilege == 2 %}Enroller{% else %}{{ l.privilege }}{% endif %}</span>{% else %}User{% endif %}</td>
+        <td class="text-center">{{ l.finger_list|length }}</td><td class="small">{{ l.card_number|default:"" }}</td></tr>
+      {% empty %}<tr><td colspan="7"><div class="empty-state"><i class="bi bi-person"></i>No users known yet – run “Download users & fingerprints”.</div></td></tr>{% endfor %}</tbody>
+    </table></div></div>
+  {% with page=links_page %}{% include "partials/pagination.html" %}{% endwith %}
+</div>
+</div>
+{% endblock %}

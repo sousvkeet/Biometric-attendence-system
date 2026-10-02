@@ -1,0 +1,146 @@
+<script>
+(function () {
+  const modalEl = document.getElementById("enrollModal");
+  if (!modalEl) return;
+  const NAMES = ["Left little","Left ring","Left middle","Left index","Left thumb","Right thumb","Right index","Right middle","Right ring","Right little"];
+  const PREFERRED = [6, 3, 5, 4, 7, 2, 8, 1, 9, 0];
+  const $ = (id) => document.getElementById(id);
+  const form = $("enrollForm");
+  const hands = modalEl.querySelector(".hands");
+  let enrolled = hands ? hands.dataset.enrolled.split(",").filter(Boolean).map(Number) : [];
+  let selected = null, job = null, pollTimer = null, finished = false, changed = false, lastStep = "queued";
+
+  function drawFingers() {
+    modalEl.querySelectorAll(".finger").forEach((b) => {
+      const f = Number(b.dataset.finger);
+      b.classList.toggle("done", enrolled.includes(f));
+      b.classList.toggle("sel", f === selected);
+      b.disabled = enrolled.includes(f);
+      b.title = NAMES[f] + (enrolled.includes(f) ? " (already registered)" : "");
+    });
+    if ($("fingerLabel")) $("fingerLabel").textContent = selected === null ? "–" : NAMES[selected];
+    if ($("fingerInput")) $("fingerInput").value = selected === null ? "" : selected;
+    if ($("btnStart")) $("btnStart").disabled = selected === null;
+  }
+  function pickDefault() { selected = PREFERRED.find((f) => !enrolled.includes(f)); if (selected === undefined) selected = null; drawFingers(); }
+  modalEl.querySelectorAll(".finger").forEach((b) => b.addEventListener("click", () => { selected = Number(b.dataset.finger); drawFingers(); }));
+
+  function show(view) {
+    $("enrollSetup").classList.toggle("d-none", view !== "setup");
+    $("enrollLive").classList.toggle("d-none", view !== "live");
+    if ($("btnStart")) $("btnStart").classList.toggle("d-none", view !== "setup");
+    $("btnCancel").classList.toggle("d-none", view !== "live" || finished);
+    $("btnAnother").classList.toggle("d-none", !(view === "live" && finished));
+    $("enrollClose").disabled = $("btnClose").disabled = (view === "live" && !finished);
+  }
+  function reset() {
+    finished = false; job = null; lastStep = "queued"; clearTimeout(pollTimer);
+    $("liveResult").className = "alert d-none mt-3 mb-0";
+    $("fpRing").className = "fp-ring";
+    modalEl.querySelectorAll("#scanDots span").forEach((d) => d.className = "");
+    modalEl.querySelectorAll("#liveSteps li").forEach((li) => li.className = "");
+    $("scanCount").innerHTML = "&nbsp;"; $("liveSub").innerHTML = "&nbsp;"; $("liveLog").textContent = "";
+    $("liveTitle").textContent = "Connecting to the device...";
+    $("footerHint").textContent = "The device will show its “Enroll fingerprint” screen.";
+    pickDefault(); show("setup");
+  }
+
+  const ORDER = ["queued","preparing","scan1","scan2","scan3","saving","copying"];
+  function markSteps(current, failed) {
+    const idx = ORDER.indexOf(current);
+    modalEl.querySelectorAll("#liveSteps li").forEach((li) => {
+      const i = ORDER.indexOf(li.dataset.step);
+      li.className = i < idx ? "done" : (i === idx ? (failed ? "fail" : "active") : "");
+    });
+  }
+
+  function render(data) {
+    const st = data.state || {};
+    const stage = st.stage || (data.status === "pending" ? "queued" : "preparing");
+    const scan = st.scan || 0;
+    if (data.log) { const l = $("liveLog"); l.textContent = data.log; l.scrollTop = l.scrollHeight; }
+    let step = stage, ring = "fp-ring", accepted = 0;
+    if (stage === "queued") {
+      $("liveTitle").textContent = "Waiting for the device...";
+      $("liveSub").textContent = data.queue_position ? `Finishing ${data.queue_position} other device task(s) first.` : "Starting now.";
+    } else if (stage === "preparing") {
+      $("liveTitle").textContent = "Preparing the device";
+      $("liveSub").textContent = st.message || "";
+    } else if (["place","reading","accepted","verifying"].includes(stage)) {
+      step = "scan" + Math.min(scan, 3);
+      accepted = stage === "accepted" ? scan : (stage === "verifying" ? 3 : scan - 1);
+      ring = "fp-ring " + (stage === "place" ? "waiting" : stage === "reading" ? "reading" : "ok");
+      $("liveTitle").textContent = stage === "place" ? (st.retry ? "Scan not clear – place the same finger again" : "Place the finger on the device") :
+        stage === "reading" ? "Reading..." : stage === "accepted" ? "Good – lift the finger" : "Checking the fingerprint...";
+      $("liveSub").textContent = `${NAMES[st.finger]} · ${st.device}`;
+      if (stage === "verifying") step = "saving";
+    } else if (stage === "saving" || stage === "copying") {
+      accepted = 3; ring = "fp-ring ok";
+      $("liveTitle").textContent = stage === "saving" ? "Saving fingerprint..." : "Copying to other devices...";
+      $("liveSub").textContent = st.message || "";
+    } else if (stage === "done") {
+      accepted = 3;
+    }
+    if (ORDER.includes(step)) lastStep = step;
+    modalEl.querySelectorAll("#scanDots span").forEach((d, i) => d.className = i < accepted ? "on" : (i === accepted && stage === "place" ? "next" : ""));
+    $("scanCount").textContent = (accepted || stage === "place") ? `${accepted} of 3 scans` : "";
+    $("fpRing").className = ring;
+    if (ORDER.includes(step)) markSteps(step, false);
+
+    if (data.finished) {
+      finished = true; clearTimeout(pollTimer);
+      const res = $("liveResult");
+      if (data.status === "success") {
+        enrolled.push(Number(st.finger)); changed = true;
+        markSteps("copying_done", false);
+        modalEl.querySelectorAll("#liveSteps li").forEach((li) => li.className = "done");
+        $("fpRing").className = "fp-ring success";
+        $("liveTitle").textContent = "Fingerprint registered";
+        $("liveSub").textContent = `${NAMES[st.finger]} on ${st.device}`;
+        let copied = (st.copied || []).length ? `Copied to: ${st.copied.join(", ")}.` : "No other devices to copy to.";
+        if ((st.copy_failed || []).length) copied += ` Not reachable: ${st.copy_failed.join(", ")} (will be copied on the next sync).`;
+        res.className = "alert alert-success mt-3 mb-0"; res.textContent = copied;
+      } else {
+        $("fpRing").className = "fp-ring failed";
+        markSteps(lastStep, true);
+        $("liveTitle").textContent = data.status === "cancelled" ? "Cancelled" : "Registration failed";
+        $("liveSub").textContent = "No fingerprint was saved.";
+        res.className = "alert alert-" + (data.status === "cancelled" ? "secondary" : "danger") + " mt-3 mb-0";
+        res.textContent = st.message || st.error || "See the technical log.";
+      }
+      $("footerHint").textContent = "";
+      show("live");
+    }
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch(job.status_url, { headers: { Accept: "application/json" } });
+      render(await r.json());
+    } catch (e) { $("liveSub").textContent = "Connection problem – retrying..."; }
+    if (!finished) pollTimer = setTimeout(poll, 800);
+  }
+
+  if ($("btnStart")) $("btnStart").addEventListener("click", async () => {
+    $("enrollSetupError").classList.add("d-none");
+    const r = await fetch(form.action, { method: "POST", body: new FormData(form), headers: { Accept: "application/json" } });
+    const data = await r.json().catch(() => ({ ok: false, error: "Server error" }));
+    if (!data.ok) { const e = $("enrollSetupError"); e.textContent = data.error; e.classList.remove("d-none"); return; }
+    job = data; finished = false;
+    $("footerHint").textContent = "Keep this window open while the employee scans the finger.";
+    show("live"); markSteps("queued"); poll();
+  });
+  $("btnCancel").addEventListener("click", async () => {
+    if (!job) return;
+    $("btnCancel").disabled = true;
+    const fd = new FormData(); fd.append("csrfmiddlewaretoken", form.querySelector("[name=csrfmiddlewaretoken]").value);
+    await fetch(job.cancel_url, { method: "POST", body: fd, headers: { Accept: "application/json" } });
+    $("liveSub").textContent = "Cancelling...";
+    setTimeout(() => { $("btnCancel").disabled = false; }, 2000);
+  });
+  $("btnAnother").addEventListener("click", reset);
+  modalEl.addEventListener("hidden.bs.modal", () => { if (changed) window.location = window.location.pathname; else reset(); });
+  reset();
+  {% if open_enroll %}bootstrap.Modal.getOrCreateInstance(modalEl).show();{% endif %}
+})();
+</script>

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Restore backup{% endblock %}
+{% block content %}
+<div class="page-head"><h1 class="page-title text-danger"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore database</h1>
+  <div class="actions"><a class="btn btn-light" href="{% url 'backups:index' %}"><i class="bi bi-arrow-left me-1"></i>Cancel</a></div></div>
+{% for e in errors %}<div class="alert alert-danger py-2">{{ e }}</div>{% endfor %}
+<div class="row g-3">
+<div class="col-lg-7"><div class="card border-danger-subtle"><div class="card-body">
+  <div class="mb-3"><div class="small text-secondary">Restoring</div>
+    <div class="fw-semibold mono">{% if src.encrypted %}<i class="bi bi-lock-fill text-success"></i> {% endif %}{{ src.label }}</div></div>
+  <div class="alert alert-warning small">
+    <strong>Everything in the portal is replaced by the backup:</strong> employees, settings, shifts, leave and
+    punches – as they were when the backup was made. Changes made since then are lost.
+    <ul class="mb-0 mt-1 ps-3">
+      <li>Punches made after the backup are still on the devices; a full attendance download runs automatically afterwards.</li>
+      <li>The biometric devices themselves are not changed.</li>
+      <li>Login details: kept as they are now (unless you untick the option below for a complete backup).</li>
+      <li>The portal shows a “restore in progress” screen for everyone while it runs (usually under a minute).</li>
+    </ul>
+  </div>
+  <form method="post">{% csrf_token %}
+    {% for k, v in src.params.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    {% if can_backup_first %}
+    <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" name="backup_first" id="bf" checked>
+      <label class="form-check-label" for="bf"><strong>Back up the current data first</strong> (recommended – lets you return to today's data)</label></div>
+    {% endif %}
+    {% if nologins %}
+    <input type="hidden" name="keep_logins" value="on">
+    <div class="alert alert-info small py-2"><i class="bi bi-person-lock me-1"></i>This backup contains <strong>no login details</strong>:
+      the current user accounts and passwords are kept and you stay signed in.</div>
+    {% else %}
+    <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" name="keep_logins" id="kl" checked>
+      <label class="form-check-label" for="kl"><strong>Keep current user accounts and passwords</strong> (recommended – nobody is signed out;
+        untick to also bring back the accounts and passwords stored in the backup)</label></div>
+    {% endif %}
+    {% if src.encrypted %}
+    <div class="mb-3"><label class="form-label">Backup passphrase</label>
+      <input type="password" name="passphrase" class="form-control" autocomplete="off" placeholder="{% if has_saved_passphrase %}Leave empty to use the saved passphrase{% endif %}">
+      <div class="form-text">The passphrase that was used when this backup was created.</div></div>
+    {% endif %}
+    <div class="mb-3"><label class="form-label">Your admin password</label>
+      <input type="password" name="password" class="form-control" required autocomplete="current-password"></div>
+    <label class="form-label">Type <code>RESTORE</code> to confirm</label>
+    <div class="d-flex gap-2" style="max-width:420px"><input name="confirm" class="form-control" autocomplete="off" required>
+      <button class="btn btn-danger text-nowrap"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore</button></div>
+  </form>
+</div></div></div>
+<div class="col-lg-5"><div class="card"><div class="card-body small">
+  <div class="fw-semibold mb-2">What happens</div>
+  <ol class="ps-3 mb-0">
+    <li>The portal pauses (devices, live punches, backups).</li>
+    {% if can_backup_first %}<li>The current data is backed up to your destinations.</li>{% endif %}
+    <li>The backup is downloaded, decrypted and integrity-checked. <em>If anything fails up to here, nothing is changed.</em></li>
+    <li>A safety copy of the current database is kept (Backups → Undo).</li>
+    <li>The database is replaced and upgraded to this version of the portal.</li>
+    <li>The portal resumes and re-downloads attendance from the devices.</li>
+  </ol>
+</div></div></div>
+</div>
+{% endblock %}

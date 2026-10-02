@@ -1,0 +1,2 @@
+<div class="col-md-3"><select class="form-select" name="department"><option value="">All departments</option>{% for d in departments %}<option value="{{ d.pk }}" {% if request.GET.department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+<div class="col-md-2"><input class="form-control" name="q" value="{{ request.GET.q }}" placeholder="Name or ID"></div>

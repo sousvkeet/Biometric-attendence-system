@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Self-service login{% endblock %}
+{% block content %}
+<div class="page-head"><h1 class="page-title">Self-service login – {{ employee.name }}</h1>
+  <div class="actions"><a class="btn btn-light" href="{{ employee.get_absolute_url }}"><i class="bi bi-arrow-left me-1"></i>Back</a></div></div>
+<div class="card" style="max-width:560px"><div class="card-body">
+  <p class="text-secondary small">With a login the employee can see their own attendance, apply for leave and request missed-punch corrections.</p>
+  <form method="post">{% csrf_token %}{% with col='col-12' %}{% include "partials/form_fields.html" %}{% endwith %}
+    <div class="mt-4 d-flex gap-2"><button class="btn btn-primary" name="save">Save login</button>
+      {% if employee.user and employee.user.is_active %}<button class="btn btn-outline-danger" name="disable" value="1" formnovalidate>Disable login</button>{% endif %}</div>
+  </form></div></div>
+{% endblock %}

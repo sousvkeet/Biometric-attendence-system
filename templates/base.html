@@ -1,0 +1,129 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="data:,">
+  <title>{% block title %}Attendance{% endblock %} · {{ company_name|default:"Biometric Attendance" }}</title>
+  <link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.min.css' %}">
+  <link rel="stylesheet" href="{% static 'vendor/bootstrap-icons/bootstrap-icons.min.css' %}">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+{% with url=request.resolver_match.url_name ns=request.resolver_match.namespace %}
+{% if user.is_staff %}
+<aside class="app-sidebar">
+  <a class="brand" href="{% url 'dashboard' %}"><span class="logo"><i class="bi bi-fingerprint"></i></span>
+    <span>BioAttend<small class="d-block fw-normal text-white-50" style="font-size:.72rem">{{ company_name }}</small></span></a>
+  <div class="nav-section">Overview</div>
+  <a class="nav-link {% if url == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><i class="bi bi-speedometer2"></i>Dashboard</a>
+  <a class="nav-link {% if url == 'live_monitor' %}active{% endif %}" href="{% url 'live_monitor' %}"><i class="bi bi-broadcast"></i>Live monitor</a>
+  <div class="nav-section">People</div>
+  <a class="nav-link {% if ns == 'employees' %}active{% endif %}" href="{% url 'employees:list' %}"><i class="bi bi-people"></i>Employees</a>
+  <a class="nav-link {% if url == 'department_list' or url == 'department_create' or url == 'department_edit' %}active{% endif %}" href="{% url 'department_list' %}"><i class="bi bi-diagram-3"></i>Departments</a>
+  <a class="nav-link {% if url == 'designation_list' or url == 'designation_create' or url == 'designation_edit' %}active{% endif %}" href="{% url 'designation_list' %}"><i class="bi bi-person-badge"></i>Designations</a>
+  <div class="nav-section">Devices</div>
+  <a class="nav-link {% if ns == 'devices' and url != 'sync_center' and url != 'jobs' and url != 'job_detail' %}active{% endif %}" href="{% url 'devices:list' %}"><i class="bi bi-hdd-network"></i>Devices
+    {% if nav_counts.offline_devices %}<span class="badge text-bg-danger">{{ nav_counts.offline_devices }}</span>{% endif %}</a>
+  <a class="nav-link {% if url == 'sync_center' %}active{% endif %}" href="{% url 'devices:sync_center' %}"><i class="bi bi-arrow-repeat"></i>Sync center</a>
+  <a class="nav-link {% if url == 'jobs' or url == 'job_detail' %}active{% endif %}" href="{% url 'devices:jobs' %}"><i class="bi bi-list-task"></i>Sync jobs
+    {% if nav_counts.running_jobs %}<span class="badge text-bg-primary">{{ nav_counts.running_jobs }}</span>{% endif %}</a>
+  <div class="nav-section">Attendance</div>
+  <a class="nav-link {% if ns == 'attendance' and url == 'list' %}active{% endif %}" href="{% url 'attendance:list' %}"><i class="bi bi-person-check"></i>Attendance</a>
+  <a class="nav-link {% if url == 'logs' or url == 'manual_punch' %}active{% endif %}" href="{% url 'attendance:logs' %}"><i class="bi bi-clock-history"></i>Punch logs</a>
+  <a class="nav-link {% if url == 'daily' %}active{% endif %}" href="{% url 'attendance:daily' %}"><i class="bi bi-calendar-day"></i>Daily report</a>
+  <a class="nav-link {% if url == 'monthly' %}active{% endif %}" href="{% url 'attendance:monthly' %}"><i class="bi bi-calendar3"></i>Monthly register</a>
+  <a class="nav-link {% if url == 'exceptions' %}active{% endif %}" href="{% url 'attendance:exceptions' %}"><i class="bi bi-exclamation-diamond"></i>Late / exceptions</a>
+  <a class="nav-link {% if url == 'leaves' or url == 'leave_create' %}active{% endif %}" href="{% url 'attendance:leaves' %}"><i class="bi bi-airplane"></i>Leave requests
+    {% if nav_counts.leaves %}<span class="badge text-bg-warning">{{ nav_counts.leaves }}</span>{% endif %}</a>
+  <a class="nav-link {% if url == 'regularizations' %}active{% endif %}" href="{% url 'attendance:regularizations' %}"><i class="bi bi-pencil-square"></i>Missed punch requests
+    {% if nav_counts.regularizations %}<span class="badge text-bg-warning">{{ nav_counts.regularizations }}</span>{% endif %}</a>
+  <div class="nav-section">Setup</div>
+  <a class="nav-link {% if url == 'shift_list' or url == 'shift_create' or url == 'shift_edit' %}active{% endif %}" href="{% url 'shift_list' %}"><i class="bi bi-alarm"></i>Shifts</a>
+  <a class="nav-link {% if url == 'holiday_list' or url == 'holiday_create' or url == 'holiday_edit' %}active{% endif %}" href="{% url 'holiday_list' %}"><i class="bi bi-calendar-heart"></i>Holidays</a>
+  <a class="nav-link {% if url == 'leavetype_list' or url == 'leavetype_create' or url == 'leavetype_edit' %}active{% endif %}" href="{% url 'leavetype_list' %}"><i class="bi bi-tags"></i>Leave types</a>
+  <a class="nav-link {% if url == 'settings' %}active{% endif %}" href="{% url 'settings' %}"><i class="bi bi-gear"></i>Settings</a>
+  <a class="nav-link {% if url == 'activity_log' %}active{% endif %}" href="{% url 'activity_log' %}"><i class="bi bi-journal-text"></i>Activity log</a>
+  {% if user.is_superuser %}<a class="nav-link {% if ns == 'backups' %}active{% endif %}" href="{% url 'backups:index' %}"><i class="bi bi-cloud-arrow-up"></i>Backups</a>{% endif %}
+  <div class="py-3"></div>
+</aside>
+<script>
+/* Keep the sidebar where it was: runs before first paint, so there is no jump. */
+(function () {
+  var sb = document.currentScript.previousElementSibling;
+  var saved = sessionStorage.getItem("sidebarScroll");
+  if (saved !== null) sb.scrollTop = +saved;
+  var active = sb.querySelector(".nav-link.active");
+  if (active) {
+    var a = active.getBoundingClientRect(), b = sb.getBoundingClientRect();
+    if (a.top < b.top || a.bottom > b.bottom) sb.scrollTop += a.top - b.top - (b.height - a.height) / 2;
+  }
+  var save = function () { sessionStorage.setItem("sidebarScroll", sb.scrollTop); };
+  sb.addEventListener("scroll", save, { passive: true });
+  window.addEventListener("pagehide", save);
+})();
+</script>
+{% elif user.is_authenticated %}
+<aside class="app-sidebar">
+  <a class="brand" href="{% url 'selfservice:home' %}"><span class="logo"><i class="bi bi-fingerprint"></i></span>
+    <span>BioAttend<small class="d-block fw-normal text-white-50" style="font-size:.72rem">{{ company_name }}</small></span></a>
+  <div class="nav-section">My workspace</div>
+  <a class="nav-link {% if url == 'home' %}active{% endif %}" href="{% url 'selfservice:home' %}"><i class="bi bi-house"></i>Home</a>
+  <a class="nav-link {% if url == 'attendance' %}active{% endif %}" href="{% url 'selfservice:attendance' %}"><i class="bi bi-calendar3"></i>My attendance</a>
+  <a class="nav-link {% if url == 'leaves' %}active{% endif %}" href="{% url 'selfservice:leaves' %}"><i class="bi bi-airplane"></i>My leave</a>
+  <a class="nav-link {% if url == 'regularizations' %}active{% endif %}" href="{% url 'selfservice:regularizations' %}"><i class="bi bi-pencil-square"></i>Missed punch</a>
+</aside>
+<script>
+/* Keep the sidebar where it was: runs before first paint, so there is no jump. */
+(function () {
+  var sb = document.currentScript.previousElementSibling;
+  var saved = sessionStorage.getItem("sidebarScroll");
+  if (saved !== null) sb.scrollTop = +saved;
+  var active = sb.querySelector(".nav-link.active");
+  if (active) {
+    var a = active.getBoundingClientRect(), b = sb.getBoundingClientRect();
+    if (a.top < b.top || a.bottom > b.bottom) sb.scrollTop += a.top - b.top - (b.height - a.height) / 2;
+  }
+  var save = function () { sessionStorage.setItem("sidebarScroll", sb.scrollTop); };
+  sb.addEventListener("scroll", save, { passive: true });
+  window.addEventListener("pagehide", save);
+})();
+</script>
+{% endif %}
+{% endwith %}
+<div class="app-main">
+  <header class="app-topbar">
+    <button class="btn btn-sm btn-light d-lg-none" data-toggle-sidebar><i class="bi bi-list"></i></button>
+    <div class="fw-semibold text-truncate">{% block topbar_title %}{% endblock %}</div>
+    <div class="ms-auto d-flex align-items-center gap-3">
+      {% if user.is_staff %}
+        {% if worker_online %}
+          <span class="badge rounded-pill bg-soft-success" title="Background sync worker is running"><span class="dot dot-online me-1"></span>Sync worker online</span>
+        {% else %}
+          <span class="badge rounded-pill bg-soft-danger" title="Start it with: python manage.py run_worker"><span class="dot dot-offline me-1"></span>Sync worker offline</span>
+        {% endif %}
+      {% endif %}
+      <div class="dropdown">
+        <button class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-person-circle me-1"></i>{{ user.get_username }}</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="{% url 'password_change' %}"><i class="bi bi-key me-2"></i>Change password</a></li>
+          {% if user.is_superuser %}<li><a class="dropdown-item" href="{% url 'admin:index' %}"><i class="bi bi-database me-2"></i>Database admin</a></li>{% endif %}
+          <li><hr class="dropdown-divider"></li>
+          <li><form method="post" action="{% url 'logout_page' %}">{% csrf_token %}<button class="dropdown-item" data-no-spin><i class="bi bi-box-arrow-right me-2"></i>Sign out</button></form></li>
+        </ul>
+      </div>
+    </div>
+  </header>
+  <main class="app-content">
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show py-2" role="alert">
+        {{ message }}<button type="button" class="btn-close py-2" data-bs-dismiss="alert"></button></div>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script src="{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}"></script>
+<script src="{% static 'js/app.js' %}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

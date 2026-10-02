@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}My dashboard{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">Hello, {{ employee.name }}</h1>
+  <div class="text-secondary">ID {{ employee.device_user_id }} · {{ employee.department|default:"" }} · Shift {{ employee.shift_label }}</div></div></div>
+<div class="row g-3 mb-3">
+  <div class="col-md-4"><div class="card stat-card"><div class="icon bg-soft-{{ today_rec.css }}"><i class="bi bi-calendar-check"></i></div>
+    <div><div class="value fs-5">{{ today_rec.label }}</div><div class="label">Today{% if today_rec.first_in %} · in {{ today_rec.first_in|hm }}{% endif %}{% if today_rec.last_out %} · out {{ today_rec.last_out|hm }}{% endif %}</div></div></div></div>
+  <div class="col-md-4"><div class="card stat-card"><div class="icon bg-soft-success"><i class="bi bi-person-check"></i></div>
+    <div><div class="value">{{ summary.present_days }}</div><div class="label">Present days this month</div></div></div></div>
+  <div class="col-md-4"><div class="card stat-card"><div class="icon bg-soft-warning"><i class="bi bi-alarm"></i></div>
+    <div><div class="value">{{ summary.late }}</div><div class="label">Late this month</div></div></div></div>
+</div>
+<div class="row g-3">
+  <div class="col-lg-6"><div class="card"><div class="card-header">My recent punches</div><ul class="list-group list-group-flush">
+    {% for l in recent_logs %}<li class="list-group-item d-flex small"><span>{{ l.punch_time|date:"D d M Y" }}</span><span class="ms-auto mono">{{ l.punch_time|hms }}</span><span class="ms-3 text-secondary">{{ l.device.name|default:l.get_source_display }}</span></li>
+    {% empty %}<li class="list-group-item small text-secondary">No punches yet.</li>{% endfor %}</ul></div></div>
+  <div class="col-lg-6">
+    <div class="card mb-3"><div class="card-header d-flex">Leave balance ({% now "Y" %})<a class="ms-auto small" href="{% url 'selfservice:leaves' %}">Apply →</a></div>
+      <ul class="list-group list-group-flush">{% for b in balances %}<li class="list-group-item d-flex small"><span>{{ b.type.name }}</span>
+        <span class="ms-auto">{% if b.quota %}{{ b.left }} of {{ b.quota }} left{% else %}{{ b.used }} used{% endif %}</span></li>{% endfor %}</ul></div>
+    {% if pending_leaves or pending_regs %}<div class="alert alert-info small">You have {{ pending_leaves|length }} pending leave request(s) and {{ pending_regs|length }} pending missed-punch request(s).</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

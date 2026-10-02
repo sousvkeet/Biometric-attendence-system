@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Backup #{{ run.pk }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">Backup #{{ run.pk }}</h1>
+  <div class="text-secondary">{{ run.created_at|dtime:"d M Y" }} · {% if run.trigger == 'scheduled' %}scheduled{% else %}started by {{ run.created_by|default:"admin" }}{% endif %}</div></div>
+  <div class="actions"><a class="btn btn-light" href="{% url 'backups:index' %}"><i class="bi bi-arrow-left me-1"></i>Backups</a></div></div>
+<div class="card mb-3"><div class="card-body d-flex flex-wrap align-items-center gap-3">
+  <span id="runStatus">{% status_badge run.status %}</span>
+  <span id="runSpinner" class="spinner-border spinner-border-sm text-success {% if run.is_finished %}d-none{% endif %}"></span>
+  {% if run.file_name %}<span class="mono small">{% if run.encrypted %}<i class="bi bi-lock-fill text-success"></i> {% endif %}{{ run.file_name }}</span>{% endif %}
+  {% if run.size %}<span class="small text-secondary">{{ run.size|filesizeformat }}</span>{% endif %}
+  {% if run.sha256 %}<span class="small text-secondary mono" title="SHA-256">sha256 {{ run.sha256|truncatechars:20 }}</span>{% endif %}
+  {% if run.status == 'pending' and not worker_online %}<span class="text-danger small ms-auto">Worker offline – starts when <code>./run.sh</code> is running.</span>{% endif %}
+</div></div>
+<pre class="job-log" id="runLog">{{ run.log|default:"Waiting for the worker…" }}</pre>
+{% endblock %}
+{% block scripts %}{% if not run.is_finished %}
+<script>
+async function poll() {
+  try {
+    const r = await fetch("{% url 'backups:run_status' run.pk %}"); const j = await r.json();
+    document.getElementById("runLog").textContent = j.log || "Waiting for the worker…";
+    if (j.finished) { location.reload(); return; }
+  } catch (e) {}
+  setTimeout(poll, 1500);
+}
+poll();
+</script>{% endif %}{% endblock %}

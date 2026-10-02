@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Job #{{ job.pk }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title">Job #{{ job.pk }} – {{ job.get_job_type_display }}</h1>
+    <div class="text-secondary">{{ job.target_label }} · created {{ job.created_at|dtimes:"d M Y" }}{% if job.created_by %} by {{ job.created_by }}{% endif %}{% if job.is_automatic %} (automatic){% endif %}</div></div>
+  <div class="actions">
+    {% if job.status == 'pending' %}<form method="post" action="{% url 'devices:job_cancel' job.pk %}">{% csrf_token %}<button class="btn btn-outline-danger">Cancel</button></form>{% endif %}
+    {% if job.device %}<a class="btn btn-light" href="{{ job.device.get_absolute_url }}">Device</a>{% endif %}
+    {% if job.employee %}<a class="btn btn-light" href="{{ job.employee.get_absolute_url }}">Employee</a>{% endif %}
+    <a class="btn btn-light" href="{% url 'devices:sync_center' %}">Sync center</a>
+  </div>
+</div>
+<div class="card mb-3"><div class="card-body d-flex align-items-center gap-3">
+  <span id="job-status">{% status_badge job.status %}</span>
+  <span id="job-spinner" class="spinner-border spinner-border-sm text-success {% if job.is_finished %}d-none{% endif %}"></span>
+  <span id="job-progress" class="text-secondary">{{ job.progress }}</span>
+  {% if job.status == 'pending' and not worker_online %}<span class="text-danger small ms-auto"><i class="bi bi-exclamation-triangle me-1"></i>Worker is offline – the job will start when <code>run_worker</code> is running.</span>{% endif %}
+</div></div>
+<pre class="job-log" id="job-log">{{ job.log|default:"Waiting for the worker to pick up this job..." }}</pre>
+{% endblock %}
+{% block scripts %}
+{% if not job.is_finished %}
+<script>
+const badge = {pending:"secondary",running:"primary",success:"success",partial:"warning",failed:"danger",cancelled:"secondary"};
+async function poll() {
+  try {
+    const r = await fetch("{% url 'devices:job_status' job.pk %}", {headers: {"Accept": "application/json"}});
+    const j = await r.json();
+    document.getElementById("job-status").innerHTML = `<span class="badge text-bg-${badge[j.status]||'secondary'}">${j.status_label}</span>`;
+    document.getElementById("job-progress").textContent = j.progress || "";
+    const log = document.getElementById("job-log");
+    if (j.log) { log.textContent = j.log; log.scrollTop = log.scrollHeight; }
+    if (j.finished) { document.getElementById("job-spinner").classList.add("d-none"); return; }
+  } catch (e) {}
+  setTimeout(poll, 1500);
+}
+poll();
+</script>
+{% endif %}
+{% endblock %}

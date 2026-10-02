@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Employees{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="page-title">Employees</h1>
+  <div class="actions">
+    <a class="btn btn-light" href="{% url 'employees:removed' %}"><i class="bi bi-trash me-1"></i>Removed{% if removed_count %} ({{ removed_count }}){% endif %}</a>
+    <a class="btn btn-light" href="?{% query_replace export='xlsx' page=None %}"><i class="bi bi-file-earmark-excel me-1"></i>Export</a>
+    <a class="btn btn-primary" href="{% url 'employees:create' %}"><i class="bi bi-person-plus me-1"></i>Register employee</a>
+  </div>
+</div>
+<form class="filter-bar row g-2 align-items-end">
+  <div class="col-md-3"><input class="form-control" name="q" value="{{ q }}" placeholder="Name, ID, email, phone"></div>
+  <div class="col-md-2"><select class="form-select" name="department"><option value="">All departments</option>
+    {% for d in departments %}<option value="{{ d.pk }}" {% if request.GET.department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+  <div class="col-md-2"><select class="form-select" name="status">
+    <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
+    <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option>
+    <option value="all" {% if status == 'all' %}selected{% endif %}>All</option></select></div>
+  <div class="col-md-2"><select class="form-select" name="fingerprint"><option value="">Any fingerprint</option>
+    <option value="yes" {% if request.GET.fingerprint == 'yes' %}selected{% endif %}>Has fingerprint</option>
+    <option value="none" {% if request.GET.fingerprint == 'none' %}selected{% endif %}>No fingerprint</option></select></div>
+  <div class="col-auto"><button class="btn btn-outline-primary"><i class="bi bi-funnel me-1"></i>Filter</button></div>
+</form>
+{% with top=1 %}{% include "partials/pagination.html" %}{% endwith %}
+<form method="post" action="{% url 'employees:bulk_delete' %}" id="bulkForm">{% csrf_token %}
+<div class="bulk-bar card card-body py-2 mb-2 d-none" id="bulkBar">
+  <div class="d-flex align-items-center gap-2"><strong id="bulkCount">0</strong> selected
+    <button class="btn btn-sm btn-outline-danger ms-auto" data-no-spin><i class="bi bi-trash me-1"></i>Delete selected…</button></div>
+</div>
+<div class="card"><div class="table-responsive">
+<table class="table table-hover align-middle mb-0">
+  <thead><tr><th style="width:32px"><input class="form-check-input" type="checkbox" id="selectAll" title="Select all on this page"></th><th>ID</th><th>Name</th><th>Department</th><th>Designation</th><th>Shift</th>
+    <th class="text-center" title="Fingerprints stored in the portal"><i class="bi bi-fingerprint"></i></th>
+    <th class="text-center" title="Devices the employee is registered on">Devices</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for e in page %}
+    <tr>
+      <td><input class="form-check-input row-check" type="checkbox" name="ids" value="{{ e.pk }}"></td>
+      <td class="mono">{{ e.device_user_id }}</td>
+      <td><a class="fw-semibold" href="{{ e.get_absolute_url }}">{{ e.name }}</a>
+        {% if e.privilege %}<span class="badge bg-soft-warning ms-1" title="Device privilege">{{ e.get_privilege_display }}</span>{% endif %}</td>
+      <td>{{ e.department|default:"—" }}</td>
+      <td>{{ e.designation|default:"—" }}</td>
+      <td class="small">{% if e.shift %}{{ e.shift.name }}{% elif settings_obj.auto_shift_detection %}<span class="text-secondary">Auto</span>{% else %}Default{% endif %}</td>
+      <td class="text-center">{% if e.finger_total %}<span class="badge bg-soft-success">{{ e.finger_total }}</span>{% else %}<a class="badge bg-soft-danger text-decoration-none" href="{{ e.get_absolute_url }}?enroll=1" title="Register fingerprint"><i class="bi bi-fingerprint"></i> register</a>{% endif %}</td>
+      <td class="text-center">{{ e.device_total }}{% if e.sync_to_all_devices %}<span class="text-secondary">/{{ active_devices }}</span>{% endif %}</td>
+      <td>{% status_badge e.status %}</td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="9"><div class="empty-state"><i class="bi bi-people"></i>No employees found.<br>
+      Register one, or import from a device: <a href="{% url 'devices:list' %}">Devices</a> → “Download users”.</div></td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+</form>
+{% include "partials/pagination.html" %}
+<form method="post" action="{% url 'employees:deactivate_stale' %}" class="card card-body mt-3 d-flex flex-row flex-wrap align-items-center gap-2 small no-print"
+      data-confirm="Mark every active employee without a punch in this period as inactive? (Portal only - nothing is removed from the devices.)">{% csrf_token %}
+  <i class="bi bi-person-dash text-secondary"></i><span>Clean up former staff: mark employees with no punch in the last</span>
+  <input type="number" name="days" value="60" min="7" class="form-control form-control-sm" style="width:80px"><span>days as inactive.</span>
+  <button class="btn btn-sm btn-outline-secondary">Mark inactive</button>
+  <span class="text-secondary">Inactive employees stay on the devices but are excluded from reports and not copied to new devices.</span>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const boxes = () => [...document.querySelectorAll(".row-check")];
+  const update = () => {
+    const n = boxes().filter((b) => b.checked).length;
+    document.getElementById("bulkCount").textContent = n;
+    document.getElementById("bulkBar").classList.toggle("d-none", n === 0);
+  };
+  document.getElementById("selectAll").addEventListener("change", (e) => { boxes().forEach((b) => b.checked = e.target.checked); update(); });
+  boxes().forEach((b) => b.addEventListener("change", update));
+})();
+</script>
+{% endblock %}

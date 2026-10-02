@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% load static app_tags humanize %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title">Dashboard</h1><div class="text-secondary">{{ today|date:"l, d F Y" }}</div></div>
+  <div class="actions">
+    <form method="post" action="{% url 'devices:sync_action' 'pull_attendance' %}">{% csrf_token %}
+      <button class="btn btn-outline-primary"><i class="bi bi-cloud-download me-1"></i>Download attendance</button></form>
+    <form method="post" action="{% url 'devices:sync_action' 'sync_users' %}">{% csrf_token %}
+      <button class="btn btn-primary"><i class="bi bi-arrow-repeat me-1"></i>Sync all devices</button></form>
+  </div>
+</div>
+
+{% if not worker_online %}
+<div class="alert alert-warning d-flex gap-2"><i class="bi bi-exclamation-triangle-fill"></i><div>
+  <strong>The sync worker is not running.</strong> Device actions are queued but will not run until you start it:
+  <code>.venv/bin/python manage.py run_worker</code> (or use <code>./run.sh</code>).</div></div>
+{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-xl"><div class="card stat-card"><div class="icon bg-soft-secondary"><i class="bi bi-people"></i></div>
+    <div><div class="value" data-count="total">{{ total_employees }}</div><div class="label">Active employees</div></div></div></div>
+  <div class="col-6 col-xl"><a class="text-decoration-none text-reset" href="{% url 'attendance:daily' %}?status=present"><div class="card stat-card"><div class="icon bg-soft-success"><i class="bi bi-person-check"></i></div>
+    <div><div class="value" data-count="present">{{ counts.present|default:0 }}</div><div class="label">Present today</div></div></div></a></div>
+  <div class="col-6 col-xl"><a class="text-decoration-none text-reset" href="{% url 'attendance:daily' %}?status=A"><div class="card stat-card"><div class="icon bg-soft-danger"><i class="bi bi-person-x"></i></div>
+    <div><div class="value" data-count="absent">{{ counts.absent|default:0 }}</div><div class="label">Not punched / absent</div></div></div></a></div>
+  <div class="col-6 col-xl"><a class="text-decoration-none text-reset" href="{% url 'attendance:daily' %}?status=late"><div class="card stat-card"><div class="icon bg-soft-warning"><i class="bi bi-alarm"></i></div>
+    <div><div class="value" data-count="late">{{ counts.late|default:0 }}</div><div class="label">Late today</div></div></div></a></div>
+  <div class="col-6 col-xl"><div class="card stat-card"><div class="icon bg-soft-info"><i class="bi bi-airplane"></i></div>
+    <div><div class="value" data-count="leave">{{ counts.leave|default:0 }}</div><div class="label">On leave</div></div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-xl-8">
+    <div class="card mb-3">
+      <div class="card-header d-flex">Attendance – last 7 days</div>
+      <div class="card-body"><canvas id="trend" height="110"></canvas></div>
+    </div>
+    <div class="card mb-3" data-live-feed="{% url 'live_feed' %}" data-max="12" data-toasts="1">
+      <div class="card-header d-flex align-items-center gap-2 flex-wrap">
+        <span>Live punches</span>
+        <span class="live-indicator" data-live-indicator><span class="pulse"></span><span class="label">Connecting</span></span>
+        <span class="small text-secondary fw-normal" data-live-devices></span>
+        <span class="ms-auto d-flex gap-3 small fw-normal"><a href="{% url 'live_monitor' %}"><i class="bi bi-display me-1"></i>Live monitor</a><a href="{% url 'attendance:logs' %}">All punches →</a></span>
+      </div>
+      <div class="punch-list"></div>
+      <div class="punch-empty empty-state d-none"><i class="bi bi-fingerprint"></i>No punches yet today. They appear here the moment someone punches.</div>
+    </div>
+    <div class="card">
+      <div class="card-header">Today by department</div>
+      <div class="table-responsive"><table class="table table-sm mb-0">
+        <thead><tr><th>Department</th><th class="text-end">Employees</th><th class="text-end">Present</th><th class="text-end">Absent</th><th class="text-end">Leave</th><th style="width:30%"></th></tr></thead>
+        <tbody>{% for name, c in dept_rows %}
+          <tr><td>{{ name }}</td><td class="text-end">{{ c.total }}</td><td class="text-end text-success">{{ c.present|default:0 }}</td>
+            <td class="text-end text-danger">{{ c.absent|default:0 }}</td><td class="text-end">{{ c.leave|default:0 }}</td>
+            <td><div class="progress" style="height:6px"><div class="progress-bar bg-success" style="width:{% widthratio c.present|default:0 c.total 100 %}%"></div></div></td></tr>
+        {% empty %}<tr><td colspan="6" class="text-secondary">No employees.</td></tr>{% endfor %}</tbody></table></div>
+    </div>
+  </div>
+  <div class="col-xl-4">
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center">Devices<a class="ms-auto small" href="{% url 'devices:list' %}">Manage →</a></div>
+      <ul class="list-group list-group-flush">
+      {% for d in devices %}
+        <li class="list-group-item d-flex align-items-center gap-2">
+          <span class="dot dot-{{ d.status }}"></span>
+          <div class="flex-grow-1"><a class="fw-semibold" href="{{ d.get_absolute_url }}">{{ d.name }}</a>
+            {% if d.read_only %}<span class="badge bg-soft-secondary ms-1" title="Write protection on"><i class="bi bi-lock"></i> read-only</span>{% endif %}
+            {% if d.live_state == 'connected' %}<span class="live-chip connected ms-1"><span class="live-dot"></span>Live</span>{% elif d.live_state == 'error' %}<span class="live-chip error ms-1"><span class="live-dot"></span>Live disconnected</span>{% endif %}
+            <div class="small text-secondary">{{ d.ip_address }} · last attendance {{ d.last_attendance_sync|since }}</div></div>
+          <div class="text-end small"><div>{{ d.user_count|default:"–" }} users</div><div class="text-secondary">{{ d.record_count|default:"–" }} logs</div></div>
+        </li>
+      {% empty %}<li class="list-group-item"><a href="{% url 'devices:create' %}">Add your first device</a></li>{% endfor %}
+      </ul>
+    </div>
+    <div class="card mb-3">
+      <div class="card-header">Late today</div>
+      <ul class="list-group list-group-flush">
+        {% for e, r in late_list %}<li class="list-group-item d-flex"><a href="{{ e.get_absolute_url }}">{{ e.name }}</a>
+          <span class="ms-auto text-warning-emphasis">{{ r.first_in|hm }} · +{{ r.late_minutes|minutes }}</span></li>
+        {% empty %}<li class="list-group-item text-secondary">Nobody is late today.</li>{% endfor %}
+      </ul>
+    </div>
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center">Pending approvals<a class="ms-auto small" href="{% url 'attendance:leaves' %}">Leave →</a></div>
+      <ul class="list-group list-group-flush">
+        {% for lr in pending_leaves %}<li class="list-group-item small"><strong>{{ lr.employee.name }}</strong> – {{ lr.leave_type.code }},
+          {{ lr.start_date|date:"d M" }}{% if lr.end_date != lr.start_date %} → {{ lr.end_date|date:"d M" }}{% endif %} ({{ lr.days }} d)</li>
+        {% empty %}<li class="list-group-item text-secondary small">No pending leave requests.</li>{% endfor %}
+        {% if pending_regs %}<li class="list-group-item small"><a href="{% url 'attendance:regularizations' %}">{{ pending_regs }} missed-punch request{{ pending_regs|pluralize }} waiting</a></li>{% endif %}
+      </ul>
+    </div>
+    {% if unknown_punch_ids %}
+    <div class="alert alert-info small"><i class="bi bi-info-circle me-1"></i>{{ unknown_punch_ids }} device user ID{{ unknown_punch_ids|pluralize }} in the punch log
+      {{ unknown_punch_ids|pluralize:"is,are" }} not linked to an employee. <a href="{% url 'attendance:logs' %}?unknown=1&from=2000-01-01">Review</a></div>
+    {% endif %}
+    <div class="card">
+      <div class="card-header d-flex align-items-center">Recent sync jobs<a class="ms-auto small" href="{% url 'devices:jobs' %}">All →</a></div>
+      <ul class="list-group list-group-flush">
+        {% for j in recent_jobs %}<li class="list-group-item small d-flex gap-2"><a href="{{ j.get_absolute_url }}">#{{ j.pk }}</a>
+          <span class="text-truncate">{{ j.get_job_type_display }}</span><span class="ms-auto">{% status_badge j.status %}</span></li>
+        {% empty %}<li class="list-group-item small text-secondary">No jobs yet.</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{{ trend|json_script:"trend-data" }}
+{% endblock %}
+{% block scripts %}
+<script src="{% static 'vendor/chartjs/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/live.js' %}"></script>
+<script>
+const t = JSON.parse(document.getElementById("trend-data").textContent);
+new Chart(document.getElementById("trend"), {
+  type: "bar",
+  data: { labels: t.map(x => x.label), datasets: [
+    { label: "Present", data: t.map(x => x.present), backgroundColor: "#4f9a2c", borderRadius: 4 },
+    { label: "Late", data: t.map(x => x.late), backgroundColor: "#f0a020", borderRadius: 4 } ] },
+  options: { plugins: { legend: { position: "bottom" } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load app_tags %}
+{% block title %}Devices{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="page-title">Devices</h1>
+  <div class="actions">
+    <a class="btn btn-light" href="{% url 'devices:sync_center' %}"><i class="bi bi-arrow-repeat me-1"></i>Sync center</a>
+    <a class="btn btn-primary" href="{% url 'devices:create' %}"><i class="bi bi-plus-lg me-1"></i>Add device</a>
+  </div>
+</div>
+<div class="card"><div class="table-responsive">
+<table class="table table-hover align-middle mb-0">
+  <thead><tr><th>Name</th><th>Address</th><th>Area</th><th>Role</th><th class="text-end">Users</th><th class="text-end">Fingerprints</th>
+    <th class="text-end">Records</th><th>Last attendance</th><th>Clock</th><th></th></tr></thead>
+  <tbody>
+  {% for d in devices %}
+  <tr>
+    <td><span class="dot dot-{{ d.status }} me-2"></span><a class="fw-semibold" href="{{ d.get_absolute_url }}">{{ d.name }}</a>
+      {% if not d.is_active %}<span class="badge bg-soft-secondary ms-1">disabled</span>{% endif %}
+      {% if d.read_only %}<span class="badge bg-soft-secondary ms-1"><i class="bi bi-lock"></i> read-only</span>{% endif %}
+      {% if d.is_simulator %}<span class="badge bg-soft-info ms-1">simulator</span>{% endif %}
+      <div class="small text-secondary">{{ d.device_model }} {{ d.serial_number }}</div></td>
+    <td class="mono">{{ d.ip_address }}:{{ d.port }}</td>
+    <td>{{ d.area }}</td>
+    <td class="small">{% if d.is_enroll_device %}Enroll machine{% else %}Normal machine{% endif %}</td>
+    <td class="text-end">{{ d.user_count|default:"–" }}{% if d.user_capacity %}<span class="text-secondary small">/{{ d.user_capacity }}</span>{% endif %}</td>
+    <td class="text-end">{{ d.fingerprint_count|default:"–" }}{% if d.fingerprint_capacity %}<span class="text-secondary small">/{{ d.fingerprint_capacity }}</span>{% endif %}</td>
+    <td class="text-end">{{ d.record_count|default:"–" }}</td>
+    <td class="small">{{ d.last_attendance_sync|since }}</td>
+    <td class="small {% if d.clock_offset_seconds and d.clock_offset_seconds > 120 or d.clock_offset_seconds < -120 %}text-danger{% endif %}">{{ d.clock_drift_display }}</td>
+    <td class="text-end text-nowrap">
+      <form method="post" action="{% url 'devices:action' d.pk 'refresh' %}" class="d-inline">{% csrf_token %}
+        <button class="btn btn-sm btn-outline-secondary" title="Test connection"><i class="bi bi-plug"></i></button></form>
+      <form method="post" action="{% url 'devices:action' d.pk 'pull_attendance' %}" class="d-inline">{% csrf_token %}
+        <button class="btn btn-sm btn-outline-primary" title="Download attendance"><i class="bi bi-cloud-download"></i></button></form>
+    </td>
+  </tr>
+  {% if d.status == 'offline' and d.last_error %}<tr><td colspan="10" class="small text-danger pt-0 border-top-0"><i class="bi bi-exclamation-circle me-1"></i>{{ d.last_error|truncatechars:200 }}</td></tr>{% endif %}
+  {% empty %}
+  <tr><td colspan="10"><div class="empty-state"><i class="bi bi-hdd-network"></i>No devices yet. <a href="{% url 'devices:create' %}">Add a device</a>.</div></td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% endblock %}

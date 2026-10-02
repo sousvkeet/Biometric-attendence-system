@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{% if dest %}Edit {{ dest.name }}{% else %}Add backup destination{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><h1 class="page-title">{% if dest %}Edit {{ dest.name }}{% else %}Add backup destination{% endif %}</h1>
+  <div class="actions"><a class="btn btn-light" href="{% url 'backups:index' %}"><i class="bi bi-arrow-left me-1"></i>Back</a></div></div>
+<div class="row g-3">
+<div class="col-lg-8"><div class="card"><div class="card-body">
+<form method="post" id="destForm">{% csrf_token %}
+  {% include "partials/form_fields.html" %}
+  <div class="mt-4 d-flex gap-2"><button class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save</button></div>
+</form>
+{% if dest and dest.kind == 'sftp' and dest.host_key %}
+  <form method="post" action="{% url 'backups:destination_forget_key' dest.pk %}" class="mt-3 small text-secondary" data-confirm="Forget the remembered server key?">{% csrf_token %}
+    Remembered server key: <span class="mono">{{ dest.host_key|truncatechars:60 }}</span>
+    <button class="btn btn-link btn-sm p-0 ms-2" data-no-spin>Forget server key</button></form>
+{% endif %}
+</div></div></div>
+<div class="col-lg-4"><div class="card"><div class="card-body small" id="kindHelp">
+  <div data-help="local"><strong>Local folder</strong> – a folder on this computer or a mounted network drive (e.g. <code>/mnt/nas/bioattend</code>). Keep a second, off-site destination too.</div>
+  <div data-help="s3"><strong>Amazon S3</strong> – bucket + access key with <code>s3:PutObject</code>, <code>s3:ListBucket</code>, <code>s3:GetObject</code>, <code>s3:DeleteObject</code>.<br><br><strong>S3-compatible</strong> – also fill <em>Endpoint URL</em>: Wasabi <code>https://s3.wasabisys.com</code>, Backblaze B2 <code>https://s3.&lt;region&gt;.backblazeb2.com</code>, DigitalOcean <code>https://&lt;region&gt;.digitaloceanspaces.com</code>, Cloudflare R2 <code>https://&lt;account&gt;.r2.cloudflarestorage.com</code>, MinIO <code>http://host:9000</code>.</div>
+  <div data-help="ftp"><strong>FTP</strong> – plain FTP sends the password unencrypted; prefer FTPS or SFTP when the server supports it. Default port 21.</div>
+  <div data-help="ftps"><strong>FTPS</strong> – FTP with TLS (explicit, port 21). Untick “Verify TLS certificate” only for servers with a self-signed certificate.</div>
+  <div data-help="sftp"><strong>SFTP</strong> – SSH file transfer (port 22) with a password or a private key. The server's key is remembered on the first connection and checked every time after.</div>
+  <div data-help="rclone"><strong>rclone</strong> – one connector for 70+ providers: Google Drive, OneDrive, Dropbox, Box, Mega, pCloud, Azure Blob, Google Cloud Storage, Backblaze, Yandex and more.
+    <ol class="ps-3 mt-2 mb-2">
+      <li>On any computer with a browser, install rclone and run <code>rclone config</code> → <em>n</em> (new remote), give it a name (e.g. <code>gdrive</code>) and follow the login steps.</li>
+      <li>Run <code>rclone config show gdrive</code> and paste the output (starting with <code>[gdrive]</code>) into <em>rclone config</em>.</li>
+      <li>Enter the same name as <em>remote name</em> and a folder, e.g. <code>Backups/BioAttend</code>.</li>
+    </ol>
+    The config (with its login token) is stored encrypted; refreshed tokens are saved automatically.
+    For Google Drive, <code>scope = drive.file</code> limits rclone to files it created.</div>
+  <div data-help="webdav"><strong>WebDAV</strong> – Nextcloud/ownCloud: <code>https://cloud.example.com/remote.php/dav/files/USERNAME/</code> with an <em>app password</em>. Synology: <code>https://nas:5006/</code>.</div>
+  <hr><p class="mb-0 text-secondary">Retention only ever removes files named <code>bioattend-backup-…</code> created by this system.</p>
+</div></div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const kind = document.querySelector("[name=kind]");
+  function update() {
+    const k = kind.value;
+    document.querySelectorAll("#destForm [data-kinds]").forEach((el) => {
+      const kinds = el.dataset.kinds;
+      const box = el.closest("[class^='col'], [class*=' col']");
+      if (box && kinds) box.classList.toggle("d-none", !kinds.split(" ").includes(k));
+    });
+    document.querySelectorAll("[data-help]").forEach((el) => el.classList.toggle("d-none", el.dataset.help !== k));
+    const port = document.querySelector("[name=port]");
+    if (port) port.placeholder = { ftp: "21", ftps: "21", sftp: "22" }[k] || "";
+  }
+  const pathInput = document.querySelector("[name=path]");
+  const localDefault = "{{ local_default|escapejs }}";
+  kind.addEventListener("change", () => {
+    if (kind.value !== "local" && pathInput.value === localDefault) pathInput.value = "";
+    if (kind.value === "local" && !pathInput.value) pathInput.value = localDefault;
+    update();
+  });
+  update();
+})();
+</script>
+{% endblock %}

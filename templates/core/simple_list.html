@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ crud.title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="page-title">{{ crud.title }}</h1>
+  <div class="actions"><a class="btn btn-primary" href="{% url crud.create_name %}"><i class="bi bi-plus-lg me-1"></i>Add</a></div>
+</div>
+{% if crud.help_text %}<p class="text-secondary">{{ crud.help_text }}</p>{% endif %}
+<div class="card"><div class="table-responsive">
+<table class="table table-hover align-middle mb-0">
+  <thead><tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}<th class="text-end">Actions</th></tr></thead>
+  <tbody>
+  {% for obj, cells in rows %}
+    <tr>{% for c in cells %}<td>{{ c }}</td>{% endfor %}
+      <td class="text-end text-nowrap">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url crud.edit_name obj.pk %}"><i class="bi bi-pencil"></i></a>
+        <form method="post" action="{% url crud.delete_name obj.pk %}" class="d-inline" data-confirm="Delete '{{ obj }}'?">{% csrf_token %}
+          <button class="btn btn-sm btn-outline-danger" data-no-spin><i class="bi bi-trash"></i></button></form>
+      </td></tr>
+  {% empty %}
+    <tr><td colspan="{{ headers|length|add:1 }}"><div class="empty-state"><i class="bi bi-inbox"></i>Nothing here yet.</div></td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% endblock %}
