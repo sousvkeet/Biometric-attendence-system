@@ -18,11 +18,18 @@ Rules (designed so that NOTHING on a device is ever deleted or lost):
 * If a user ID exists on a device with a clearly different name and was never
   linked before, it is reported as a conflict and left untouched.
 * Devices marked read-only are never written to.
+* Attendance records are only deleted from a device when an administrator asks for it
+  (clear_device_attendance), and only after every record is confirmed in the portal.
 """
+import calendar
+import csv
 import datetime as dt
 import logging
+import re
+import time
 from collections import Counter, defaultdict
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -30,8 +37,8 @@ from django.utils import timezone
 from attendance.models import AttendanceLog
 from employees.models import PRIVILEGE_CHOICES, Employee, FingerprintTemplate, RemovedDeviceUser, device_name_for
 
-from .drivers import (EVENT_NAMES, WRITABLE_PRIVILEGES, DevFinger, DeviceError, DevUser, EnrollCancelled,
-                      open_session)
+from .drivers import (EVENT_NAMES, WRITABLE_PRIVILEGES, DevFinger, DeviceError, DeviceReadOnly, DevUser,
+                      EnrollCancelled, open_session)
 from .models import Device, DeviceJob, DeviceRemoval, DeviceUserLink
 
 logger = logging.getLogger("devices")
@@ -515,6 +522,177 @@ def save_punches(device, punches):
         ))
     AttendanceLog.objects.bulk_create(new_rows, batch_size=2000, ignore_conflicts=True)
     return len(new_rows)
+
+
+# ---------------------------------------------------------------- maintenance (manual, admin only)
+REBOOT_FIRST_WAIT = 15  # seconds before trying to reconnect after a reboot command
+REBOOT_RETRY_EVERY = 5
+REBOOT_GIVE_UP = 180
+
+
+def restart_device(device, report):
+    """Reboot a device and wait until it answers again. Nothing on the device is deleted."""
+    report(f"{device.name}: sending the reboot command...", progress=f"Rebooting {device.name}")
+    with open_session(device) as s:
+        s.restart()
+    report(f"{device.name}: rebooting - waiting for it to come back (up to {REBOOT_GIVE_UP // 60} minutes)...",
+           progress=f"Waiting for {device.name}")
+    started = time.monotonic()
+    time.sleep(REBOOT_FIRST_WAIT)
+    while True:
+        try:
+            with open_session(device, timeout=10) as s:
+                info = s.info()
+            update_device_info(device, info)
+            seconds = int(time.monotonic() - started)
+            report(f"{device.name}: back online after {seconds} s - {info['users']} users, "
+                   f"{info['records']} attendance records")
+            return {"rebooted": 1, "back_after_seconds": seconds}
+        except DeviceError as exc:
+            if time.monotonic() - started >= REBOOT_GIVE_UP:
+                mark_offline(device, f"Not reachable after reboot: {exc}")
+                report(f"WARNING {device.name}: not reachable {REBOOT_GIVE_UP // 60} minutes after the reboot. "
+                       "Check that it started normally and is connected to the network.")
+                return {"rebooted": 1, "errors": 1}
+            time.sleep(REBOOT_RETRY_EVERY)
+
+
+def _punch_key(device_user_id, aware_time):
+    return device_user_id[:24], aware_time
+
+
+def _write_safety_copy(device, punches):
+    """CSV copy of the raw device records, kept in the data folder before anything is deleted."""
+    folder = settings.VAR_DIR / "device-records"
+    folder.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "-", device.name).strip("-") or f"device-{device.pk}"
+    path = folder / f"{safe_name}-{timezone.localtime():%Y%m%d-%H%M%S}.csv"
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["device", "serial_number", "user_id", "punch_time", "verify_type", "punch_state"])
+        for p in punches:
+            writer.writerow([device.name, device.serial_number, p.user_id, p.timestamp.isoformat(sep=" "),
+                             p.status, p.punch])
+    return path
+
+
+# Periods offered on the clear form. The device itself can only be cleared completely (ZKTeco has no command
+# to delete by date); the chosen period is confirmed in the portal and linked from the job report.
+KEEP_PERIODS = [  # (code, label, months)
+    ("6m", "Last 6 months", 6), ("1y", "Last 1 year", 12), ("18m", "Last 1.5 years", 18),
+    ("2y", "Last 2 years", 24), ("30m", "Last 2.5 years", 30), ("3y", "Last 3 years", 36),
+]
+
+
+def months_before(day, months):
+    year, month = divmod(day.year * 12 + day.month - 1 - months, 12)
+    month += 1
+    return day.replace(year=year, month=month, day=min(day.day, calendar.monthrange(year, month)[1]))
+
+
+def keep_period(code, date_from=None, date_to=None, today=None):
+    """The period chosen on the clear form -> {"label", "from", "to"} (ISO dates). Raises ValueError."""
+    today = today or timezone.localdate()
+    for period_code, label, months in KEEP_PERIODS:
+        if code == period_code:
+            return {"label": label, "from": months_before(today, months).isoformat(), "to": today.isoformat()}
+    if code == "range":
+        if not (date_from and date_to):
+            raise ValueError("Choose the start and end date of the records to keep.")
+        if date_from > date_to:
+            raise ValueError("The start date must be before the end date.")
+        return {"label": f"{date_from:%d %b %Y} to {date_to:%d %b %Y}",
+                "from": date_from.isoformat(), "to": date_to.isoformat()}
+    raise ValueError("Choose which records to keep.")
+
+
+def portal_punches_between(device, start, end):
+    """Portal punches from `device` (None: from any device) between two dates."""
+    tz = timezone.get_current_timezone()
+    return AttendanceLog.objects.filter(
+        **({"device": device} if device is not None else {"device__isnull": False}),
+        punch_time__gte=timezone.make_aware(dt.datetime.combine(start, dt.time.min), tz),
+        punch_time__lt=timezone.make_aware(dt.datetime.combine(end + dt.timedelta(days=1), dt.time.min), tz),
+    )
+
+
+def clear_device_attendance(device, report, period=None):
+    """Free the attendance memory of a device (manual, administrator only).
+
+    Order of safety checks - if any fails, nothing is deleted:
+      1. the keypad is locked, so no punch can arrive between checking and clearing;
+      2. all records are read (the count must match what the device reports);
+      3. they are saved in the portal, and EVERY record is then looked up in the portal database;
+      4. a CSV safety copy is written to the data folder;
+      5. the device must still report the same number of records.
+    `period` (from keep_period) names the records the administrator wants to keep: they are confirmed in the
+    portal separately and reported. Only the attendance records are cleared: users, fingerprints and cards stay.
+    """
+    if device.read_only:
+        raise DeviceReadOnly(f"{device.name} is write-protected (read-only): attendance records not cleared.")
+    report(f"{device.name}: locking the keypad and reading all attendance records...",
+           progress=f"Reading {device.name}")
+    with open_session(device) as s:
+        s.lock()
+        info = s.info()
+        update_device_info(device, info)
+        punches = s.get_attendance()
+        if len(punches) != info["records"]:
+            raise DeviceError(f"{device.name}: read {len(punches)} of {info['records']} records - incomplete read, "
+                              "nothing was deleted. Try again.")
+        if not punches:
+            report(f"{device.name}: the device has no attendance records - nothing to clear")
+            device.last_record_count = 0
+            device.save(update_fields=["last_record_count"])
+            return {"cleared": 0, "new": 0}
+
+        new = save_punches(device, punches)
+        tz = timezone.get_current_timezone()
+        in_portal = {_punch_key(uid, t) for uid, t in
+                     AttendanceLog.objects.filter(device=device).values_list("device_user_id", "punch_time")}
+        missing = [p for p in punches
+                   if _punch_key(p.user_id, timezone.make_aware(p.timestamp, tz)) not in in_portal]
+        if missing:
+            raise DeviceError(f"{device.name}: {len(missing)} record(s) could not be confirmed in the portal - "
+                              "nothing was deleted.")
+        report(f"{device.name}: all {len(punches)} records are saved in the portal ({new} were new)")
+        kept = None
+        if period:
+            start, end = dt.date.fromisoformat(period["from"]), dt.date.fromisoformat(period["to"])
+            on_device = sum(1 for p in punches if start <= p.timestamp.date() <= end)
+            in_portal_count = portal_punches_between(device, start, end).count()
+            if in_portal_count < on_device:  # cannot happen after the check above; never clear if it does
+                raise DeviceError(f"{device.name}: the portal has fewer records for {period['label']} than the "
+                                  "device - nothing was deleted.")
+            kept = {**period, "device_records": on_device, "portal_punches": in_portal_count}
+            report(f"{device.name}: records to keep - {period['label']} ({start:%d %b %Y} to {end:%d %b %Y}): "
+                   f"all {on_device} device records are in the portal ({in_portal_count} punches from this "
+                   "device in that period). They stay in the portal.")
+        copy = _write_safety_copy(device, punches)
+        report(f"{device.name}: safety copy written to {copy}")
+
+        if s.sizes()["records"] != len(punches):
+            raise DeviceError(f"{device.name}: the number of records changed while checking - nothing was deleted. "
+                              "Try again.")
+        report(f"{device.name}: clearing attendance records on the device...", progress=f"Clearing {device.name}")
+        s.clear_attendance()
+        after = s.sizes()
+
+    device.record_count = after["records"]
+    device.last_record_count = after["records"]  # so the next download does not skip new punches
+    device.last_attendance_sync = timezone.now()
+    device.save(update_fields=["record_count", "last_record_count", "last_attendance_sync"])
+    cleared = len(punches) - after["records"]
+    report(f"{device.name}: {cleared} attendance records cleared from the device "
+           f"({after['records']} left, capacity {after.get('rec_cap') or '?'}). "
+           "Users and fingerprints were not touched.")
+    result = {"cleared": cleared, "new": new, "safety_copy": str(copy)}
+    if kept:
+        result["kept"] = kept
+    if after["records"]:
+        result["errors"] = 1
+        report(f"WARNING {device.name}: the device still reports {after['records']} records after clearing")
+    return result
 
 
 # ---------------------------------------------------------------- remove deleted employees from a device

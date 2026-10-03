@@ -4,6 +4,8 @@ import json
 import os
 import shutil
 import tempfile
+from pathlib import Path
+from unittest import mock
 
 from django.test import TestCase, override_settings
 from zk import ZK
@@ -12,7 +14,8 @@ from attendance.models import AttendanceLog
 from employees.models import Employee, FingerprintTemplate
 
 from . import sync
-from .drivers import DestructiveOperationBlocked, DevFinger, DevUser, SimulatorSession
+from .drivers import (DestructiveOperationBlocked, DeviceError, DeviceReadOnly, DevFinger, DevUser,
+                      SimulatorSession)
 from .jobs import enqueue, run_pending_jobs
 from .models import Device, DeviceJob, DeviceUserLink
 
@@ -80,16 +83,25 @@ class SafetyTests(TestCase):
         from . import drivers, jobs
         for module in (sync, jobs):
             src = inspect.getsource(module)
-            for name in ("delete_user(", "clear_data(", "clear_attendance(", "delete_user_template("):
+            for name in ("delete_user(", "clear_data(", "delete_user_template(", "poweroff("):
                 self.assertNotIn(name, src)
+        # Clearing attendance is called from exactly one place: the checked, manual clear_device_attendance.
+        self.assertEqual(inspect.getsource(sync).count(".clear_attendance("), 1)
+        self.assertIn(".clear_attendance(", inspect.getsource(sync.clear_device_attendance))
+        self.assertNotIn("clear_attendance", inspect.getsource(jobs).replace("clear_device_attendance", "")
+                         .replace("TYPE_CLEAR_ATTENDANCE", ""))
         self.assertTrue(hasattr(drivers.ZKSession, "set_user"))
-        for name in ("delete_user", "clear_attendance", "clear_data"):
+        for name in ("delete_user", "clear_data", "poweroff"):
             self.assertFalse(hasattr(drivers.ZKSession, name))
-        # The per-user delete commands are reachable from exactly one place: ZKSession.remove_user.
+        # Each kept pyzk command is reachable from exactly one ZKSession method.
         src = inspect.getsource(drivers)
         remove_src = inspect.getsource(drivers.ZKSession.remove_user)
         self.assertEqual(src.count('_USER_DELETE["'), remove_src.count('_USER_DELETE["'))
         self.assertNotIn("clear_attendance", remove_src)
+        self.assertEqual(set(drivers._MAINTENANCE), {"restart", "clear_attendance"})
+        for name in ("restart", "clear_attendance"):
+            self.assertEqual(src.count(f'_MAINTENANCE["{name}"]'), 1)
+            self.assertIn(f'_MAINTENANCE["{name}"]', inspect.getsource(getattr(drivers.ZKSession, name)))
 
 
 class MultiDeviceSyncTests(SimulatorTestCase):
@@ -513,3 +525,174 @@ class AttendanceSyncTests(SimulatorTestCase):
         self.assertEqual(job.status, "success", job.log)
         self.assertIn("Finished", job.log)
         self.assertTrue(Employee.objects.filter(device_user_id="1").exists())
+
+
+class MaintenanceTests(SimulatorTestCase):
+    def setUp(self):
+        super().setUp()
+        self.var = tempfile.mkdtemp()
+        self.var_override = override_settings(VAR_DIR=Path(self.var))
+        self.var_override.enable()
+        self.t0 = dt.datetime(2026, 9, 1, 9, 0)
+        self.d = self.make_device("Gate")
+        self.seed(self.d, users=[dict(uid=1, user_id="1", name="Alice")], fingers=[(1, 6, b"tpl")],
+                  punches=[("1", self.t0), ("1", self.t0 + dt.timedelta(hours=9)), ("99", self.t0)])
+
+    def tearDown(self):
+        self.var_override.disable()
+        shutil.rmtree(self.var, ignore_errors=True)
+        super().tearDown()
+
+    def test_clear_saves_everything_first_and_keeps_users(self):
+        sync.pull_attendance(self.d, quiet)  # one punch already known, two arrive with the clear
+        AttendanceLog.objects.filter(device_user_id="99").delete()
+        result = sync.clear_device_attendance(self.d, quiet)
+        self.assertEqual((result["cleared"], result["new"]), (3, 1))
+        state = self.state(self.d)
+        self.assertEqual(state["attendance"], [])
+        self.assertEqual([u["user_id"] for u in state["users"]], ["1"])  # users and fingerprints untouched
+        self.assertEqual(self.fingers(self.d, 1), [6])
+        self.assertEqual(AttendanceLog.objects.filter(device=self.d).count(), 3)
+        with open(result["safety_copy"], encoding="utf-8") as fh:
+            self.assertEqual(len(fh.read().strip().splitlines()), 4)  # header + 3 records
+        # After clearing, new punches are downloaded (not skipped because of the old record count).
+        self.d.refresh_from_db()
+        self.assertEqual(self.d.last_record_count, 0)
+        SimulatorSession(self.d).open().add_punch("1", self.t0 + dt.timedelta(days=1))
+        self.assertEqual(sync.pull_attendance(self.d, quiet)["new"], 1)
+
+    def test_nothing_deleted_when_a_record_is_not_confirmed_in_portal(self):
+        with mock.patch.object(sync, "save_punches", return_value=0):
+            with self.assertRaisesRegex(DeviceError, "could not be confirmed"):
+                sync.clear_device_attendance(self.d, quiet)
+        self.assertEqual(len(self.state(self.d)["attendance"]), 3)
+
+    def test_nothing_deleted_on_incomplete_read(self):
+        short = SimulatorSession.get_attendance
+        with mock.patch.object(SimulatorSession, "get_attendance", lambda s: short(s)[:2]):
+            with self.assertRaisesRegex(DeviceError, "incomplete read"):
+                sync.clear_device_attendance(self.d, quiet)
+        self.assertEqual(len(self.state(self.d)["attendance"]), 3)
+        self.assertEqual(AttendanceLog.objects.count(), 0)
+
+    def test_read_only_device_is_never_cleared(self):
+        self.d.read_only = True
+        self.d.save()
+        with self.assertRaises(DeviceReadOnly):
+            sync.clear_device_attendance(self.d, quiet)
+        self.assertEqual(len(self.state(self.d)["attendance"]), 3)
+
+    def test_reboot_job_waits_for_device(self):
+        with mock.patch.multiple(sync, REBOOT_FIRST_WAIT=0, REBOOT_RETRY_EVERY=0):
+            job = enqueue(DeviceJob.TYPE_RESTART, device=self.d)
+            run_pending_jobs()
+        job.refresh_from_db()
+        self.assertEqual(job.status, "success", job.log)
+        self.assertIn("back online", job.log)
+        self.assertEqual(self.state(self.d)["restarts"], 1)
+        self.assertEqual(len(self.state(self.d)["attendance"]), 3)  # a reboot deletes nothing
+
+    def test_views_require_main_admin_and_typed_name(self):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        url = f"/devices/{self.d.pk}/clear-attendance/"
+        boss = User.objects.create_superuser("boss", "", "pw123456")  # first-run setup done
+        self.client.force_login(User.objects.create_user("hr", "", "pw123456", is_staff=True))
+        self.client.post(url, {"confirm_name": "Gate"})
+        self.client.post(f"/devices/{self.d.pk}/reboot/")
+        self.assertFalse(self.d.jobs.filter(job_type=DeviceJob.TYPE_CLEAR_ATTENDANCE).exists())
+        self.assertTrue(self.d.jobs.filter(job_type=DeviceJob.TYPE_RESTART).exists())  # staff may reboot
+
+        self.client.force_login(boss)
+        self.client.post(url, {"confirm_name": "wrong", "keep": "1y"})
+        self.client.post(url, {"confirm_name": "Gate"})  # no period chosen
+        self.client.post(url, {"confirm_name": "Gate", "keep": "range", "keep_from": "2026-09-30",
+                               "keep_to": "2026-01-01"})  # start after end
+        self.assertFalse(self.d.jobs.filter(job_type=DeviceJob.TYPE_CLEAR_ATTENDANCE).exists())
+        self.d.jobs.all().delete()
+        self.client.post(url, {"confirm_name": " gate ", "keep": "range", "keep_from": "2026-01-01",
+                               "keep_to": "2026-09-30"})
+        job = self.d.jobs.get(job_type=DeviceJob.TYPE_CLEAR_ATTENDANCE)
+        self.assertEqual(job.payload["period"]["from"], "2026-01-01")
+        self.assertContains(self.client.get(job.get_absolute_url()), "View kept records")
+        self.assertEqual(self.client.get(url).status_code, 405)  # never on GET
+        page = self.client.get(f"/devices/{self.d.pk}/")
+        self.assertContains(page, "Clear attendance records")
+        self.assertContains(page, "Reboot device")
+        self.assertContains(page, "Last 2.5 years")
+
+    def test_keep_periods(self):
+        today = dt.date(2026, 8, 31)
+        self.assertEqual(sync.keep_period("6m", today=today)["from"], "2026-02-28")  # end of month clamped
+        self.assertEqual(sync.keep_period("18m", today=today)["from"], "2025-02-28")
+        self.assertEqual(sync.keep_period("30m", today=today)["from"], "2024-02-29")  # leap year
+        self.assertEqual(sync.keep_period("3y", today=today)["from"], "2023-08-31")
+        self.assertEqual(len(sync.KEEP_PERIODS), 6)
+        for bad in [("x", None, None), ("range", None, today), ("range", today, today - dt.timedelta(days=1))]:
+            with self.assertRaises(ValueError):
+                sync.keep_period(*bad, today=today)
+
+    def test_clear_job_confirms_and_reports_kept_period(self):
+        period = sync.keep_period("range", self.t0.date(), self.t0.date())
+        job = enqueue(DeviceJob.TYPE_CLEAR_ATTENDANCE, device=self.d, payload={"period": period})
+        run_pending_jobs()
+        job.refresh_from_db()
+        self.assertEqual(job.status, "success", job.log)
+        kept = job.result["devices"]["Gate"]["kept"]
+        self.assertEqual((kept["device_records"], kept["portal_punches"]), (3, 3))
+        self.assertIn("records to keep", job.log)
+        self.assertEqual(self.state(self.d)["attendance"], [])
+
+    def test_all_devices_clear_and_reboot_one_after_the_other(self):
+        from django.contrib.auth import get_user_model
+        other = self.make_device("Back door")
+        locked = self.make_device("Locked", read_only=True)
+        self.seed(other, punches=[("1", self.t0)])
+        self.seed(locked, punches=[("1", self.t0)])
+        self.client.force_login(get_user_model().objects.create_superuser("boss", "", "pw123456"))
+        url = "/devices/maintenance/clear/"
+        ids = [self.d.pk, other.pk]
+        self.client.post(url, {"device": ids, "keep": "1y"})  # CLEAR not typed
+        self.client.post(url, {"device": ids + [locked.pk], "keep": "1y", "confirm_text": "clear"})  # read-only ticked
+        self.client.post(url, {"device": ids, "confirm_text": "clear"})  # no period
+        self.assertFalse(DeviceJob.objects.exists())
+
+        self.client.post(url, {"device": ids, "keep": "2y", "confirm_text": " clear "})
+        job = DeviceJob.objects.get()
+        self.assertIsNone(job.device)
+        self.assertEqual(job.target_label, "Back door, Gate")
+        run_pending_jobs()
+        job.refresh_from_db()
+        self.assertEqual(job.status, "success", job.log)
+        self.assertEqual(self.state(self.d)["attendance"], [])
+        self.assertEqual(self.state(other)["attendance"], [])
+        self.assertEqual(len(self.state(locked)["attendance"]), 1)  # not ticked, never touched
+        self.assertLess(job.log.index("--- Back door"), job.log.index("--- Gate"))
+        self.assertContains(self.client.get(job.get_absolute_url()), "View kept records (Last 2 years)")
+
+        with mock.patch.multiple(sync, REBOOT_FIRST_WAIT=0, REBOOT_RETRY_EVERY=0):
+            self.client.post("/devices/maintenance/reboot/", {"device": [self.d.pk, other.pk, locked.pk]})
+            run_pending_jobs()
+        job = DeviceJob.objects.filter(job_type=DeviceJob.TYPE_RESTART).get()
+        self.assertEqual(job.status, "success", job.log)
+        for device in (self.d, other, locked):
+            self.assertEqual(self.state(device)["restarts"], 1)
+
+        page = self.client.get("/devices/")
+        self.assertContains(page, "Reboot devices…")
+        self.assertContains(page, "read-only, never cleared")
+        self.assertContains(page, "Last 3 years")
+
+    def test_one_failing_device_does_not_stop_the_others(self):
+        other = self.make_device("Back door")
+        self.seed(other, punches=[("1", self.t0)])
+        broken = self.make_device("Broken")
+        broken.ip_address = "offline"
+        broken.save()
+        job = enqueue(DeviceJob.TYPE_CLEAR_ATTENDANCE, payload={
+            "device_ids": [broken.pk, other.pk], "period": sync.keep_period("6m")})
+        run_pending_jobs()
+        job.refresh_from_db()
+        self.assertEqual(job.status, "partial", job.log)
+        self.assertEqual(job.result["failed_devices"], ["Broken"])
+        self.assertEqual(self.state(other)["attendance"], [])

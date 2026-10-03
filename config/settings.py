@@ -5,6 +5,7 @@ Configuration is read from environment variables (a `.env` file in the
 project root is loaded automatically). See `.env.example`.
 """
 import os
+import sys
 from pathlib import Path
 
 import dj_database_url
@@ -149,6 +150,8 @@ STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 WHITENOISE_USE_FINDERS = True  # serve static files with DEBUG off, even before collectstatic
+# Development server: re-read edited CSS/JS (otherwise a changed file is served with its old size, cut off).
+WHITENOISE_AUTOREFRESH = DEBUG or "runserver" in sys.argv
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {
@@ -179,7 +182,6 @@ SIMULATOR_DIR = Path(os.environ["SIMULATOR_DIR"]) if os.environ.get("SIMULATOR_D
 # ---------------------------------------------------------------- logging
 # LOG_TO_FILE=true (default): rotating files in var/log. Docker: LOG_TO_FILE=false -> console only.
 LOG_DIR = VAR_DIR / "log"
-import sys  # noqa: E402
 LOG_TO_FILE = env_bool("LOG_TO_FILE", True) and "test" not in sys.argv[1:2]
 _handlers = {"console": {"class": "logging.StreamHandler", "formatter": "plain"}}
 if LOG_TO_FILE:

@@ -27,7 +27,7 @@
   <span class="small text-secondary me-2">Other actions:</span>
   <form method="post" action="{% url 'devices:sync_action' 'refresh' %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary"><i class="bi bi-plug me-1"></i>Refresh status of all devices</button></form>
   <form method="post" action="{% url 'devices:sync_action' 'push_users' %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary"><i class="bi bi-person-up me-1"></i>Upload portal employees only</button></form>
-  <form method="post" action="{% url 'devices:sync_action' 'sync_time' %}" data-confirm="Set the clock of every writable device to the server time?">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary"><i class="bi bi-clock me-1"></i>Sync device clocks</button></form>
+  <form method="post" action="{% url 'devices:sync_action' 'sync_time' %}" data-confirm="Set the clock of every writable device to the server time?" data-confirm-title="Sync all device clocks">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary"><i class="bi bi-clock me-1"></i>Sync device clocks</button></form>
   <span class="ms-auto small text-secondary">Automatic: attendance every {{ settings_obj.attendance_sync_interval }} min{% if not settings_obj.auto_attendance_sync %} (off){% endif %},
     users every {{ settings_obj.user_sync_interval }} min{% if not settings_obj.auto_user_sync %} (off){% endif %} · <a href="{% url 'settings' %}">change</a></span>
 </div></div>

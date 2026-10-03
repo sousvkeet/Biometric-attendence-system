@@ -10,7 +10,7 @@
   <div class="mt-4 d-flex gap-2"><button class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save</button></div>
 </form>
 {% if dest and dest.kind == 'sftp' and dest.host_key %}
-  <form method="post" action="{% url 'backups:destination_forget_key' dest.pk %}" class="mt-3 small text-secondary" data-confirm="Forget the remembered server key?">{% csrf_token %}
+  <form method="post" action="{% url 'backups:destination_forget_key' dest.pk %}" class="mt-3 small text-secondary" data-confirm="Forget the remembered server key?" data-confirm-title="Forget server key">{% csrf_token %}
     Remembered server key: <span class="mono">{{ dest.host_key|truncatechars:60 }}</span>
     <button class="btn btn-link btn-sm p-0 ms-2" data-no-spin>Forget server key</button></form>
 {% endif %}

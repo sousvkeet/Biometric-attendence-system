@@ -57,7 +57,7 @@
 </form>
 {% include "partials/pagination.html" %}
 <form method="post" action="{% url 'employees:deactivate_stale' %}" class="card card-body mt-3 d-flex flex-row flex-wrap align-items-center gap-2 small no-print"
-      data-confirm="Mark every active employee without a punch in this period as inactive? (Portal only - nothing is removed from the devices.)">{% csrf_token %}
+      data-confirm="Mark every active employee without a punch in this period as inactive? (Portal only - nothing is removed from the devices.)" data-confirm-title="Mark employees inactive">{% csrf_token %}
   <i class="bi bi-person-dash text-secondary"></i><span>Clean up former staff: mark employees with no punch in the last</span>
   <input type="number" name="days" value="60" min="7" class="form-control form-control-sm" style="width:80px"><span>days as inactive.</span>
   <button class="btn btn-sm btn-outline-secondary">Mark inactive</button>

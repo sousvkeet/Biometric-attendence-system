@@ -46,7 +46,7 @@
             <form method="post" action="{% url 'backups:destination_test' d.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" title="Test connection"><i class="bi bi-plug"></i> Test</button></form>
             <a class="btn btn-sm btn-outline-secondary" href="{% url 'backups:files' d.pk %}" title="Stored backups"><i class="bi bi-folder2-open"></i></a>
             <a class="btn btn-sm btn-outline-secondary" href="{% url 'backups:destination_edit' d.pk %}" title="Edit"><i class="bi bi-pencil"></i></a>
-            <form method="post" action="{% url 'backups:destination_delete' d.pk %}" data-confirm="Remove destination '{{ d.name }}'? Files already stored there are kept.">{% csrf_token %}<button class="btn btn-sm btn-outline-danger" data-no-spin title="Remove"><i class="bi bi-trash"></i></button></form>
+            <form method="post" action="{% url 'backups:destination_delete' d.pk %}" data-confirm="Remove destination '{{ d.name }}'? Files already stored there are kept." data-confirm-title="Remove backup destination" data-confirm-ok="Remove" data-confirm-variant="danger">{% csrf_token %}<button class="btn btn-sm btn-outline-danger" data-no-spin title="Remove"><i class="bi bi-trash"></i></button></form>
           </div>
         </li>
       {% empty %}

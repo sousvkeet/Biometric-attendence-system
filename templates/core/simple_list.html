@@ -14,7 +14,7 @@
     <tr>{% for c in cells %}<td>{{ c }}</td>{% endfor %}
       <td class="text-end text-nowrap">
         <a class="btn btn-sm btn-outline-secondary" href="{% url crud.edit_name obj.pk %}"><i class="bi bi-pencil"></i></a>
-        <form method="post" action="{% url crud.delete_name obj.pk %}" class="d-inline" data-confirm="Delete '{{ obj }}'?">{% csrf_token %}
+        <form method="post" action="{% url crud.delete_name obj.pk %}" class="d-inline" data-confirm="Delete '{{ obj }}'?" data-confirm-title="Delete" data-confirm-ok="Delete" data-confirm-variant="danger">{% csrf_token %}
           <button class="btn btn-sm btn-outline-danger" data-no-spin><i class="bi bi-trash"></i></button></form>
       </td></tr>
   {% empty %}

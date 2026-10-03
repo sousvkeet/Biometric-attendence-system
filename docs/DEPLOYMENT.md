@@ -315,7 +315,9 @@ Then, signed in as the administrator:
    It must end with **0 problems**.
 
 **Device safety rules:**
-- Attendance records are never deleted from a device.
+- Attendance records are never deleted from a device automatically. The main administrator can clear them by
+  hand (device page → Maintenance), but only after every record is confirmed in the portal. A CSV copy is kept
+  in `var/device-records/`.
 - Users are removed from a device only when an administrator deletes an employee with
   "Portal and all devices". The name must match, and device administrators need the main administrator.
 - Details are in the README.

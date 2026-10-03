@@ -85,6 +85,13 @@ class Device(models.Model):
         return max(self.fingerprint_capacity - self.fingerprint_count, 0)
 
     @property
+    def record_usage_percent(self):
+        """How full the attendance memory is (0-100), or None if unknown."""
+        if not self.record_capacity or self.record_count is None:
+            return None
+        return min(round(self.record_count * 100 / self.record_capacity), 100)
+
+    @property
     def clock_drift_display(self):
         if self.clock_offset_seconds is None:
             return ""
@@ -166,6 +173,8 @@ class DeviceJob(models.Model):
     TYPE_PUSH_EMPLOYEE = "push_employee"
     TYPE_ENROLL = "enroll_finger"
     TYPE_REMOVE_USERS = "remove_users"
+    TYPE_RESTART = "restart_device"
+    TYPE_CLEAR_ATTENDANCE = "clear_attendance"
     TYPE_CHOICES = [
         (TYPE_REFRESH, "Test connection / refresh info"),
         (TYPE_PULL_USERS, "Download users & fingerprints"),
@@ -177,6 +186,8 @@ class DeviceJob(models.Model):
         (TYPE_PUSH_EMPLOYEE, "Send employee to devices"),
         (TYPE_ENROLL, "Remote fingerprint enrollment"),
         (TYPE_REMOVE_USERS, "Remove deleted employees from devices"),
+        (TYPE_RESTART, "Reboot device"),
+        (TYPE_CLEAR_ATTENDANCE, "Clear attendance records on device"),
     ]
     STATUS_CHOICES = [
         ("pending", "Pending"),
@@ -217,7 +228,13 @@ class DeviceJob(models.Model):
     @property
     def target_label(self):
         parts = []
-        parts.append(self.device.name if self.device_id else "All devices")
+        if self.device_id:
+            parts.append(self.device.name)
+        elif (self.payload or {}).get("device_ids"):  # reboot / clear records on the ticked devices
+            names = Device.objects.filter(pk__in=self.payload["device_ids"]).order_by("name").values_list("name", flat=True)
+            parts.append(", ".join(names) or "Selected devices")
+        else:
+            parts.append("All devices")
         if self.employee_id:
             parts.append(self.employee.name)
         return " / ".join(parts)

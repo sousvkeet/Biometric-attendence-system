@@ -4,15 +4,17 @@ Device drivers.
 Every conversation with a biometric device goes through a *session* object
 returned by `open_session(device)`. Sessions expose a deliberately small API:
 
-    read:   info(), get_users(), get_templates(), get_attendance(), get_time()
-    write:  set_user(), save_user_template(), set_time(), enroll_finger()
-            (add / update only)
+    read:     info(), get_users(), get_templates(), get_attendance(), get_time()
+    write:    set_user(), save_user_template(), set_time(), enroll_finger()
+              (add / update only)
+    manual:   remove_user()       one employee the admin deleted in the portal
+              restart()           reboot (nothing is deleted)
+              clear_attendance()  attendance records only, after they are safely in the portal
+                                  (see sync.clear_device_attendance - never called automatically)
 
-There is NO way to delete anything from a device through this module:
-users, fingerprints and attendance logs on the hardware are never removed.
-As an extra safety net the destructive methods of the pyzk library are
-replaced with a function that raises, so even a programming mistake
-elsewhere cannot wipe a device.
+The destructive methods of the pyzk library are replaced with a function that
+raises, so even a programming mistake elsewhere cannot wipe a device. Wiping
+everything (clear_data) and power-off stay blocked completely.
 """
 import base64
 import contextlib
@@ -60,10 +62,13 @@ def _blocked(name):
     return method
 
 
-# The originals of the two per-user delete commands are kept privately; the ONLY code allowed to use them is
-# ZKSession.remove_user() (removing one specific employee an admin deleted in the portal). Everything else
-# stays blocked, and attendance logs can never be deleted.
+# The originals of a few commands are kept privately, each used by exactly one ZKSession method:
+#   delete_user / delete_user_template -> remove_user()  (one employee an admin deleted in the portal)
+#   restart                            -> restart()
+#   clear_attendance                   -> clear_attendance()  (only via sync.clear_device_attendance)
+# clear_data (users + fingerprints + attendance) and poweroff are never available.
 _USER_DELETE = {name: getattr(ZK, name) for name in ("delete_user", "delete_user_template")}
+_MAINTENANCE = {name: getattr(ZK, name) for name in ("restart", "clear_attendance")}
 
 for _name in DESTRUCTIVE_PYZK_METHODS:
     setattr(ZK, _name, _blocked(_name))
@@ -272,6 +277,21 @@ class ZKSession:
         _USER_DELETE["delete_user"](self.conn, uid=user.uid)
         for fid in finger_ids:  # templates normally go with the user; clear any that remain
             _USER_DELETE["delete_user_template"](self.conn, uid=user.uid, temp_id=fid)
+        self.conn.refresh_data()
+
+    # ----- maintenance (manual, admin only)
+    @_device_call
+    def restart(self):
+        """Reboot the device. Users, fingerprints and attendance are kept; the connection ends."""
+        self._disabled = False  # the reboot re-enables the keypad by itself
+        _MAINTENANCE["restart"](self.conn)
+
+    @_device_call
+    def clear_attendance(self):
+        """Delete the attendance records (only those: users, fingerprints and cards stay).
+        Only sync.clear_device_attendance() may call this, after checking every record is in the portal."""
+        self._check_writable()
+        _MAINTENANCE["clear_attendance"](self.conn)
         self.conn.refresh_data()
 
     @_device_call
@@ -526,6 +546,17 @@ class SimulatorSession:
         with _sim_lock:
             self.data["users"] = [u for u in self.data["users"] if u["uid"] != user.uid]
             self.data["templates"] = [t for t in self.data["templates"] if t["uid"] != user.uid]
+            self._save()
+
+    def restart(self):
+        with _sim_lock:
+            self.data["restarts"] = self.data.get("restarts", 0) + 1
+            self._save()
+
+    def clear_attendance(self):
+        self._check_writable()
+        with _sim_lock:
+            self.data["attendance"] = []
             self._save()
 
     ENROLL_STEP_SECONDS = 1.5  # simulated time per scan

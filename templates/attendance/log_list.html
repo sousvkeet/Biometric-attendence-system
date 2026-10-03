@@ -29,7 +29,7 @@
     <td class="small">{{ l.employee.department|default:"" }}</td><td>{{ l.device.name|default:"—" }}</td>
     <td class="small">{{ l.verify_label }}</td><td class="small">{{ l.punch_label }}</td>
     <td class="text-end">{% if l.source != 'device' %}<span class="badge bg-soft-info" title="{{ l.note }}">{{ l.get_source_display }}</span>
-      <form method="post" action="{% url 'attendance:delete_punch' l.pk %}" class="d-inline" data-confirm="Delete this manual punch?">{% csrf_token %}
+      <form method="post" action="{% url 'attendance:delete_punch' l.pk %}" class="d-inline" data-confirm="Delete this manual punch?" data-confirm-title="Delete punch" data-confirm-ok="Delete" data-confirm-variant="danger">{% csrf_token %}
         <input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-sm btn-link text-danger p-0 ms-1" data-no-spin><i class="bi bi-x-circle"></i></button></form>{% endif %}</td></tr>
   {% empty %}<tr><td colspan="9"><div class="empty-state"><i class="bi bi-clock-history"></i>No punches for this filter.</div></td></tr>{% endfor %}</tbody>
 </table></div></div>

@@ -1,3 +1,5 @@
+import datetime as dt
+
 from django.contrib import messages
 from django.db.models import Q
 from django.http import JsonResponse
@@ -14,7 +16,7 @@ from .drivers import DeviceError, SimulatorSession
 from .forms import DeviceForm, SimulatedPunchForm
 from .jobs import enqueue
 from .models import Device, DeviceJob
-from .sync import employees_for_device
+from .sync import KEEP_PERIODS, employees_for_device, keep_period, months_before, portal_punches_between
 
 DEVICE_ACTIONS = {
     "refresh": (DeviceJob.TYPE_REFRESH, False, "Connection test"),
@@ -36,7 +38,10 @@ GLOBAL_ACTIONS = {
 @staff_required
 def device_list(request):
     devices = Device.objects.all()
-    return render(request, "devices/list.html", {"devices": devices})
+    return render(request, "devices/list.html", {
+        "devices": devices,
+        "keep_periods": _keep_period_choices(None) if request.user.is_superuser else [],
+    })
 
 
 @staff_required
@@ -74,7 +79,25 @@ def device_detail(request, pk):
         "log_count": device.logs.count(),
         "actions": DEVICE_ACTIONS,
         "punch_form": SimulatedPunchForm() if device.is_simulator else None,
+        "keep_periods": _keep_period_choices(device) if request.user.is_superuser and not device.read_only else [],
     })
+
+
+def _keep_period_choices(device):
+    today = timezone.localdate()
+    choices = []
+    for code, label, months in KEEP_PERIODS:
+        start = months_before(today, months)
+        choices.append({"code": code, "label": label, "from": start,
+                        "count": portal_punches_between(device, start, today).count()})
+    return choices
+
+
+def _parse_day(value):
+    try:
+        return dt.date.fromisoformat((value or "").strip())
+    except ValueError:
+        return None
 
 
 @staff_required
@@ -92,6 +115,118 @@ def device_action(request, pk, action):
     job = enqueue(job_type, device=device, payload=payload, user=request.user)
     ActivityLog.log(request, f"Device: {label}", device)
     messages.success(request, f"{label} queued (job #{job.pk}).")
+    return redirect(job)
+
+
+def _maintenance_running(device=None):
+    """A reboot/clear job that is waiting or running for this device (or for several devices)."""
+    jobs = DeviceJob.objects.filter(job_type__in=[DeviceJob.TYPE_RESTART, DeviceJob.TYPE_CLEAR_ATTENDANCE],
+                                    status__in=["pending", "running"])
+    if device is None:
+        return jobs.first()
+    return jobs.filter(Q(device=device) | Q(device__isnull=True)).first()
+
+
+@staff_required
+@require_POST
+def devices_maintenance(request, action):
+    """Reboot / clear attendance records on the devices ticked on the Devices page (one after the other)."""
+    if action not in ("reboot", "clear"):
+        messages.error(request, "Unknown action.")
+        return redirect("devices:list")
+    ids = [int(v) for v in request.POST.getlist("device") if v.isdigit()]
+    devices = list(Device.objects.filter(pk__in=ids).order_by("name"))
+    if not devices:
+        messages.error(request, "Tick at least one device.")
+        return redirect("devices:list")
+    period = None
+    if action == "clear":
+        if not request.user.is_superuser:
+            messages.error(request, "Only the main administrator can clear attendance records on devices.")
+            return redirect("devices:list")
+        protected = [d.name for d in devices if d.read_only]
+        if protected:
+            messages.error(request, f"Not cleared: {', '.join(protected)} {'is' if len(protected) == 1 else 'are'} "
+                                    "write-protected. Untick or turn off read-only mode first.")
+            return redirect("devices:list")
+        if request.POST.get("confirm_text", "").strip().upper() != "CLEAR":
+            messages.error(request, "Not cleared: type CLEAR to confirm.")
+            return redirect("devices:list")
+        try:
+            period = keep_period(request.POST.get("keep", ""), _parse_day(request.POST.get("keep_from")),
+                                 _parse_day(request.POST.get("keep_to")))
+        except ValueError as exc:
+            messages.error(request, f"Not cleared: {exc}")
+            return redirect("devices:list")
+    busy = _maintenance_running()
+    if busy:
+        messages.info(request, f"{busy.get_job_type_display()} is already in progress - wait until it finishes.")
+        return redirect(busy)
+    names = ", ".join(d.name for d in devices)
+    if len(devices) == 1:
+        job_type = DeviceJob.TYPE_CLEAR_ATTENDANCE if period else DeviceJob.TYPE_RESTART
+        job = enqueue(job_type, device=devices[0], payload={"period": period} if period else {}, user=request.user)
+    else:
+        payload = {"device_ids": [d.pk for d in devices]}
+        if period:
+            payload["period"] = period
+        job = enqueue(DeviceJob.TYPE_CLEAR_ATTENDANCE if period else DeviceJob.TYPE_RESTART, payload=payload,
+                      user=request.user)
+    if period:
+        ActivityLog.log(request, "Devices: clear attendance records", names, f"keep in portal: {period['label']}")
+        messages.success(request, f"Clearing attendance records of {names} queued (job #{job.pk}). "
+                                  "One device at a time; every record is saved in the portal first.")
+    else:
+        ActivityLog.log(request, "Devices: reboot", names)
+        messages.success(request, f"Reboot of {names} queued (job #{job.pk}). The devices restart one after the "
+                                  "other, each offline for about a minute.")
+    return redirect(job)
+
+
+@staff_required
+@require_POST
+def device_reboot(request, pk):
+    device = get_object_or_404(Device, pk=pk)
+    busy = _maintenance_running(device)
+    if busy:
+        messages.info(request, f"{busy.get_job_type_display()} is already in progress for {device.name}.")
+        return redirect(busy)
+    job = enqueue(DeviceJob.TYPE_RESTART, device=device, user=request.user)
+    ActivityLog.log(request, "Device: reboot", device)
+    messages.success(request, f"Reboot of {device.name} queued (job #{job.pk}). The device is offline for about a minute.")
+    return redirect(job)
+
+
+@staff_required
+@require_POST
+def device_clear_attendance(request, pk):
+    """Manual only: delete the attendance records on the device after they are all safely in the portal."""
+    device = get_object_or_404(Device, pk=pk)
+    if not request.user.is_superuser:
+        messages.error(request, "Only the main administrator can clear attendance records on a device.")
+        return redirect(device)
+    if device.read_only:
+        messages.error(request, f"{device.name} is write-protected. Turn off read-only mode to clear its records.")
+        return redirect(device)
+    if request.POST.get("confirm_name", "").strip().casefold() != device.name.strip().casefold():
+        messages.error(request, f"Not cleared: type the device name \u201c{device.name}\u201d exactly to confirm.")
+        return redirect(device)
+    try:
+        period = keep_period(request.POST.get("keep", ""), _parse_day(request.POST.get("keep_from")),
+                             _parse_day(request.POST.get("keep_to")))
+    except ValueError as exc:
+        messages.error(request, f"Not cleared: {exc}")
+        return redirect(device)
+    busy = _maintenance_running(device)
+    if busy:
+        messages.info(request, f"{busy.get_job_type_display()} is already in progress for {device.name}.")
+        return redirect(busy)
+    job = enqueue(DeviceJob.TYPE_CLEAR_ATTENDANCE, device=device, payload={"period": period}, user=request.user)
+    ActivityLog.log(request, "Device: clear attendance records", device,
+                    f"{device.record_count if device.record_count is not None else '?'} records on device; "
+                    f"keep in portal: {period['label']}")
+    messages.success(request, f"Clearing attendance records of {device.name} queued (job #{job.pk}). "
+                              "All records are saved in the portal first.")
     return redirect(job)
 
 

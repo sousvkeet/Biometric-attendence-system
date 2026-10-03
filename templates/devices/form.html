@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head"><h1 class="page-title">{% if device %}Edit {{ device.name }}{% else %}Add device{% endif %}</h1>
   <div class="actions"><a class="btn btn-light" href="{% if device %}{{ device.get_absolute_url }}{% else %}{% url 'devices:list' %}{% endif %}"><i class="bi bi-arrow-left me-1"></i>Back</a>
-  {% if device %}<form method="post" action="{% url 'devices:delete' device.pk %}" data-confirm="Remove {{ device.name }} from the portal? (Nothing on the device itself is changed.)">{% csrf_token %}
+  {% if device %}<form method="post" action="{% url 'devices:delete' device.pk %}" data-confirm="Remove {{ device.name }} from the portal? (Nothing on the device itself is changed.)" data-confirm-title="Remove device">{% csrf_token %}
     <button class="btn btn-outline-danger" data-no-spin><i class="bi bi-trash me-1"></i>Remove from portal</button></form>{% endif %}</div></div>
 <div class="row g-3">
 <div class="col-lg-8"><div class="card"><div class="card-body">

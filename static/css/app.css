@@ -212,3 +212,13 @@ body { background: #f4f6f2; color: var(--ink); font-size: .925rem; }
 .scope-option .form-check-input { margin-top: .25rem; flex: 0 0 auto; }
 .pager { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .pager-top { margin-bottom: .6rem; }
+
+/* Confirmation dialog (static/js/app.js showConfirm) - above everything, including other dialogs */
+.confirm-dialog .modal { z-index: 2010; }
+.confirm-dialog .modal-backdrop { z-index: 2000; }
+.confirm-dialog .modal-body { white-space: pre-line; }
+.confirm-dialog .modal-content { box-shadow: 0 1rem 3rem rgba(0, 0, 0, .25); }
+body.confirm-open { overflow: hidden; }
+
+/* Less important table columns, hidden when the screen is too narrow (e.g. Devices: area, role) */
+@media (max-width: 1599.98px) { .col-wide { display: none; } }

@@ -62,8 +62,18 @@ The top bar shows "Sync worker online/offline"; `GET /healthz` reports it for mo
 
 ## Device safety rules (enforced in code)
 
-* **Attendance records are never deleted from a device.** The pyzk clear/poweroff/restart and delete commands are
-  replaced at start-up with a function that raises an error.
+* **Attendance records are never deleted from a device automatically.** The pyzk clear/poweroff/restart and
+  delete commands are replaced at start-up with a function that raises an error. Erasing all data and power-off
+  are never possible.
+* **Maintenance** (manual), on a device page or for several devices at once (**Devices → Maintenance**, which
+  works through the ticked devices one after the other):
+  * **Reboot device** (staff): restarts the device, waits until it answers again, and deletes nothing.
+  * **Clear attendance records** (main administrator only, and the device name must be typed to confirm):
+    frees the device's attendance memory. First the keypad is locked and every record is downloaded and looked
+    up in the portal database. A CSV safety copy is written to `var/device-records/`. If any check fails,
+    nothing is deleted. You choose the records to keep (last 6 months to 3 years, or a date range). ZKTeco
+    devices can only be cleared completely, so that period is checked and kept in the portal. Users, fingerprints and cards stay on the device. Write-protected devices are never
+    cleared.
 * The only device deletion is **removing an employee you delete** with “Delete from: portal and all devices”:
   only that person's user record and fingerprints are deleted, and only when both the ID *and* the name match
   (a different person re-using the ID is left alone). Write-protected devices are skipped; offline devices are

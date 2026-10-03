@@ -43,6 +43,44 @@
     <div class="item"><div class="k">Last user sync</div><div class="v">{{ device.last_user_sync|since }}</div></div>
   </div></div></div>
 
+  <div class="card mb-3" id="maintenance"><div class="card-header"><i class="bi bi-tools me-1"></i>Maintenance</div><div class="card-body">
+    <div class="d-flex justify-content-between small mb-1"><span>Attendance memory</span>
+      <span>{% if device.record_count is not None %}{{ device.record_count }}{% if device.record_capacity %} / {{ device.record_capacity }} records ({{ device.record_usage_percent }}%){% else %} records{% endif %}{% else %}unknown – run Connection test{% endif %}</span></div>
+    {% if device.record_usage_percent is not None %}
+    <div class="progress mb-1" style="height:8px" role="progressbar" aria-label="Attendance memory used" aria-valuenow="{{ device.record_usage_percent }}" aria-valuemin="0" aria-valuemax="100">
+      <div class="progress-bar {% if device.record_usage_percent >= 90 %}bg-danger{% elif device.record_usage_percent >= 75 %}bg-warning{% endif %}" style="width:{{ device.record_usage_percent }}%"></div></div>
+    {% if device.record_usage_percent >= 75 %}<div class="small text-danger mb-1">The device memory is filling up. When it is full the device stops accepting punches – clear the records below.</div>{% endif %}
+    {% endif %}
+
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <form method="post" action="{% url 'devices:reboot' device.pk %}" data-confirm="Reboot {{ device.name }} now? It is offline for about a minute (nobody can punch). Nothing on the device is deleted." data-confirm-title="Reboot device" data-confirm-ok="Reboot">{% csrf_token %}
+        <button class="btn btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>Reboot device</button></form>
+      {% if request.user.is_superuser and not device.read_only %}
+      <button class="btn btn-outline-danger" type="button" data-bs-toggle="collapse" data-bs-target="#clear-records" aria-expanded="false" aria-controls="clear-records">
+        <i class="bi bi-eraser me-1"></i>Clear attendance records…</button>
+      {% else %}
+      <button class="btn btn-outline-danger" type="button" disabled title="{% if device.read_only %}Write protection is on{% else %}Only the main administrator can do this{% endif %}"><i class="bi bi-eraser me-1"></i>Clear attendance records…</button>
+      {% endif %}
+    </div>
+
+    {% if request.user.is_superuser and not device.read_only %}
+    <div class="collapse{% if request.GET.maintenance == 'clear' %} show{% endif %} mt-3" id="clear-records"><div class="border border-danger-subtle rounded p-3 small">
+      <p class="mb-2">Frees the attendance memory of <b>{{ device.name }}</b>. Before anything is deleted, BioAttend:</p>
+      <ol class="mb-2 ps-3">
+        <li>locks the keypad, so no punch is lost while it works,</li>
+        <li>downloads every record and checks each one is saved in the portal – including the period you keep below,</li>
+        <li>keeps a CSV copy of the records in the data folder.</li>
+      </ol>
+      <p class="mb-2">If any check fails, nothing is deleted. Only attendance records are cleared – <b>users, fingerprints and cards stay on the device</b>. Attendance in the portal is not affected.</p>
+      <form method="post" action="{% url 'devices:clear_attendance' device.pk %}" data-confirm="Clear all attendance records from {{ device.name }}? They stay in the portal, but are removed from the device." data-confirm-title="Clear attendance records">{% csrf_token %}
+        {% include "devices/_keep_period_fields.html" with scope="device" %}
+        <label class="form-label" for="confirm-name">Type the device name <b class="user-select-all">{{ device.name }}</b> to confirm</label>
+        <div class="d-flex gap-2"><input class="form-control form-control-sm" id="confirm-name" name="confirm_name" autocomplete="off" required>
+          <button class="btn btn-sm btn-danger text-nowrap"><i class="bi bi-eraser me-1"></i>Save &amp; clear records</button></div>
+      </form></div></div>
+    {% endif %}
+  </div></div>
+
   {% if punch_form %}
   <div class="card mb-3"><div class="card-header"><i class="bi bi-joystick me-1"></i>Simulator: add a punch</div><div class="card-body">
     <form method="post" action="{% url 'devices:simulate_punch' device.pk %}" class="row g-2">{% csrf_token %}

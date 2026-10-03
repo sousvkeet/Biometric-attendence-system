@@ -6,12 +6,21 @@
   <h1 class="page-title">Devices</h1>
   <div class="actions">
     <a class="btn btn-light" href="{% url 'devices:sync_center' %}"><i class="bi bi-arrow-repeat me-1"></i>Sync center</a>
+    {% if devices %}
+    <div class="dropdown">
+      <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-tools me-1"></i>Maintenance</button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#reboot-modal"><i class="bi bi-arrow-repeat me-2"></i>Reboot devices…</button></li>
+        <li><button class="dropdown-item text-danger" type="button" {% if request.user.is_superuser %}data-bs-toggle="modal" data-bs-target="#clear-modal"{% else %}disabled title="Only the main administrator can do this"{% endif %}><i class="bi bi-eraser me-2"></i>Clear attendance records…</button></li>
+      </ul>
+    </div>
+    {% endif %}
     <a class="btn btn-primary" href="{% url 'devices:create' %}"><i class="bi bi-plus-lg me-1"></i>Add device</a>
   </div>
 </div>
 <div class="card"><div class="table-responsive">
 <table class="table table-hover align-middle mb-0">
-  <thead><tr><th>Name</th><th>Address</th><th>Area</th><th>Role</th><th class="text-end">Users</th><th class="text-end">Fingerprints</th>
+  <thead><tr><th>Name</th><th>Address</th><th class="col-wide">Area</th><th class="col-wide">Role</th><th class="text-end">Users</th><th class="text-end">Fingerprints</th>
     <th class="text-end">Records</th><th>Last attendance</th><th>Clock</th><th></th></tr></thead>
   <tbody>
   {% for d in devices %}
@@ -22,11 +31,14 @@
       {% if d.is_simulator %}<span class="badge bg-soft-info ms-1">simulator</span>{% endif %}
       <div class="small text-secondary">{{ d.device_model }} {{ d.serial_number }}</div></td>
     <td class="mono">{{ d.ip_address }}:{{ d.port }}</td>
-    <td>{{ d.area }}</td>
-    <td class="small">{% if d.is_enroll_device %}Enroll machine{% else %}Normal machine{% endif %}</td>
+    <td class="col-wide">{{ d.area }}</td>
+    <td class="small col-wide">{% if d.is_enroll_device %}Enroll machine{% else %}Normal machine{% endif %}</td>
     <td class="text-end">{{ d.user_count|default:"–" }}{% if d.user_capacity %}<span class="text-secondary small">/{{ d.user_capacity }}</span>{% endif %}</td>
     <td class="text-end">{{ d.fingerprint_count|default:"–" }}{% if d.fingerprint_capacity %}<span class="text-secondary small">/{{ d.fingerprint_capacity }}</span>{% endif %}</td>
-    <td class="text-end">{{ d.record_count|default:"–" }}</td>
+    <td class="text-end">{{ d.record_count|default:"–" }}{% if d.record_usage_percent is not None %}
+      <div class="progress mt-1 ms-auto" style="height:4px;width:70px" role="progressbar" aria-label="Attendance memory used" aria-valuenow="{{ d.record_usage_percent }}" aria-valuemin="0" aria-valuemax="100" title="{{ d.record_usage_percent }}% of {{ d.record_capacity }} records used">
+        <div class="progress-bar {% if d.record_usage_percent >= 90 %}bg-danger{% elif d.record_usage_percent >= 75 %}bg-warning{% endif %}" style="width:{{ d.record_usage_percent }}%"></div></div>
+      <div class="small {% if d.record_usage_percent >= 75 %}text-danger{% else %}text-secondary{% endif %}">{{ d.record_usage_percent }}% full</div>{% endif %}</td>
     <td class="small">{{ d.last_attendance_sync|since }}</td>
     <td class="small {% if d.clock_offset_seconds and d.clock_offset_seconds > 120 or d.clock_offset_seconds < -120 %}text-danger{% endif %}">{{ d.clock_drift_display }}</td>
     <td class="text-end text-nowrap">
@@ -34,6 +46,9 @@
         <button class="btn btn-sm btn-outline-secondary" title="Test connection"><i class="bi bi-plug"></i></button></form>
       <form method="post" action="{% url 'devices:action' d.pk 'pull_attendance' %}" class="d-inline">{% csrf_token %}
         <button class="btn btn-sm btn-outline-primary" title="Download attendance"><i class="bi bi-cloud-download"></i></button></form>
+      <form method="post" action="{% url 'devices:reboot' d.pk %}" class="d-inline" data-confirm="Reboot {{ d.name }} now? It is offline for about a minute. Nothing on the device is deleted." data-confirm-title="Reboot device" data-confirm-ok="Reboot">{% csrf_token %}
+        <button class="btn btn-sm btn-outline-secondary" title="Reboot device"><i class="bi bi-arrow-repeat"></i></button></form>
+      {% if request.user.is_superuser and not d.read_only %}<a class="btn btn-sm btn-outline-danger" href="{{ d.get_absolute_url }}?maintenance=clear#maintenance" title="Clear attendance records…"><i class="bi bi-eraser"></i></a>{% endif %}
     </td>
   </tr>
   {% if d.status == 'offline' and d.last_error %}<tr><td colspan="10" class="small text-danger pt-0 border-top-0"><i class="bi bi-exclamation-circle me-1"></i>{{ d.last_error|truncatechars:200 }}</td></tr>{% endif %}
@@ -42,4 +57,33 @@
   {% endfor %}
   </tbody>
 </table></div></div>
+
+{% if devices %}
+<div class="modal fade" id="reboot-modal" tabindex="-1" aria-labelledby="reboot-title" aria-hidden="true"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="{% url 'devices:maintenance' 'reboot' %}" data-confirm="Reboot the ticked devices now? They restart one after the other." data-confirm-title="Reboot devices">{% csrf_token %}
+    <div class="modal-header"><h5 class="modal-title" id="reboot-title"><i class="bi bi-arrow-repeat me-1"></i>Reboot devices</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body small">
+      <p>The devices restart <b>one after the other</b> – each is offline for about a minute, so people can always punch on the others. Nothing on the devices is deleted.</p>
+      {% for d in devices %}<div class="form-check"><input class="form-check-input" type="checkbox" name="device" value="{{ d.pk }}" id="rb-{{ d.pk }}" {% if d.is_active %}checked{% endif %}>
+        <label class="form-check-label" for="rb-{{ d.pk }}">{{ d.name }} <span class="text-secondary">{{ d.ip_address }}{% if not d.is_active %} · disabled{% endif %}</span></label></div>{% endfor %}
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary"><i class="bi bi-arrow-repeat me-1"></i>Reboot</button></div>
+  </form></div></div></div>
+
+{% if request.user.is_superuser %}
+<div class="modal fade" id="clear-modal" tabindex="-1" aria-labelledby="clear-title" aria-hidden="true"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <form method="post" action="{% url 'devices:maintenance' 'clear' %}" data-confirm="Clear all attendance records from the ticked devices? They stay in the portal, but are removed from the devices." data-confirm-title="Clear attendance records">{% csrf_token %}
+    <div class="modal-header"><h5 class="modal-title" id="clear-title"><i class="bi bi-eraser me-1"></i>Clear attendance records</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body small">
+      <p class="mb-2">Frees the attendance memory of the ticked devices, one after the other. For each device BioAttend first locks the keypad, downloads every record and checks each one is saved in the portal, and keeps a CSV copy. If a check fails on a device, nothing is deleted there. <b>Users, fingerprints and cards stay on the devices.</b></p>
+      <div class="mb-3">{% for d in devices %}<div class="form-check"><input class="form-check-input" type="checkbox" name="device" value="{{ d.pk }}" id="cl-{{ d.pk }}" {% if d.read_only %}disabled{% elif d.is_active %}checked{% endif %}>
+        <label class="form-check-label" for="cl-{{ d.pk }}">{{ d.name }} <span class="text-secondary">{% if d.record_count is not None %}{{ d.record_count }} records{% if d.record_usage_percent is not None %} ({{ d.record_usage_percent }}% full){% endif %}{% endif %}{% if d.read_only %} · read-only, never cleared{% elif not d.is_active %} · disabled{% endif %}</span></label></div>{% endfor %}</div>
+      {% include "devices/_keep_period_fields.html" with scope="all" %}
+      <label class="form-label" for="confirm-text">Type <b>CLEAR</b> to confirm</label>
+      <input class="form-control form-control-sm" id="confirm-text" name="confirm_text" autocomplete="off" required>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger"><i class="bi bi-eraser me-1"></i>Save &amp; clear records</button></div>
+  </form></div></div></div>
+{% endif %}
+{% endif %}
 {% endblock %}

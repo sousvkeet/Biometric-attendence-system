@@ -7,6 +7,7 @@
     <div class="text-secondary">{{ job.target_label }} · created {{ job.created_at|dtimes:"d M Y" }}{% if job.created_by %} by {{ job.created_by }}{% endif %}{% if job.is_automatic %} (automatic){% endif %}</div></div>
   <div class="actions">
     {% if job.status == 'pending' %}<form method="post" action="{% url 'devices:job_cancel' job.pk %}">{% csrf_token %}<button class="btn btn-outline-danger">Cancel</button></form>{% endif %}
+    {% if job.payload.period %}<a class="btn btn-outline-primary" href="{% url 'attendance:logs' %}?{% if job.device %}device={{ job.device.pk }}&amp;{% endif %}from={{ job.payload.period.from }}&amp;to={{ job.payload.period.to }}"><i class="bi bi-list-check me-1"></i>View kept records ({{ job.payload.period.label }})</a>{% endif %}
     {% if job.device %}<a class="btn btn-light" href="{{ job.device.get_absolute_url }}">Device</a>{% endif %}
     {% if job.employee %}<a class="btn btn-light" href="{{ job.employee.get_absolute_url }}">Employee</a>{% endif %}
     <a class="btn btn-light" href="{% url 'devices:sync_center' %}">Sync center</a>

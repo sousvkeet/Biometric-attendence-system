@@ -65,9 +65,45 @@ def _run(job, report):
         return sync.push_employee(job.employee, report)
     if t == DeviceJob.TYPE_REMOVE_USERS:
         return sync.remove_from_all_devices(report)
+    if t in (DeviceJob.TYPE_RESTART, DeviceJob.TYPE_CLEAR_ATTENDANCE):
+        return _run_maintenance(job, report)
     if t == DeviceJob.TYPE_ENROLL:
         return sync.enroll_fingerprint(job.device, job.employee, int(p.get("finger_index", 6)), report)
     raise ValueError(f"Unknown job type {t}")
+
+
+def _run_maintenance(job, report):
+    """Reboot / clear records on one device, or on the devices the administrator ticked - one after the other,
+    so the devices are never all out of service at the same time. Each device gets its own safety checks."""
+    p = job.payload or {}
+    if job.device_id:
+        devices = [job.device]
+    else:
+        devices = list(Device.objects.filter(pk__in=p.get("device_ids") or []).order_by("name"))
+    if not devices:
+        raise ValueError("No devices selected")
+    clear = job.job_type == DeviceJob.TYPE_CLEAR_ATTENDANCE
+    if len(devices) == 1:  # a refusal fails the job, so it is clearly visible
+        device = devices[0]
+        result = sync.clear_device_attendance(device, report, p.get("period")) if clear \
+            else sync.restart_device(device, report)
+        return {"devices": {device.name: result}}
+    result = {"devices": {}, "failed_devices": []}
+    for number, device in enumerate(devices, 1):
+        report(f"--- {device.name} ({number} of {len(devices)})")
+        try:
+            if clear and device.read_only:
+                report(f"{device.name}: write-protected (read-only) - skipped")
+                result["devices"][device.name] = {"skipped": 1}
+            elif clear:
+                result["devices"][device.name] = sync.clear_device_attendance(device, report, p.get("period"))
+            else:
+                result["devices"][device.name] = sync.restart_device(device, report)
+        except Exception as exc:  # the other devices still get their turn
+            logger.warning("Maintenance on %s failed: %s", device, exc)
+            result["failed_devices"].append(device.name)
+            report(f"ERROR {device.name}: {exc}")
+    return result
 
 
 def _has_problems(result):

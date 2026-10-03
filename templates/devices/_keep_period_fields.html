@@ -1,0 +1,12 @@
+{# Period picker of the "clear attendance records" forms. Needs: keep_periods, scope ("device" or "all") #}
+<label class="form-label" for="keep-{{ scope }}">Records to keep (in the portal)</label>
+<select class="form-select form-select-sm" name="keep" id="keep-{{ scope }}" data-keep-period="{{ scope }}">
+  {% for p in keep_periods %}<option value="{{ p.code }}" data-count="{{ p.count }}" data-from="{{ p.from|date:'d M Y' }}">{{ p.label }}</option>{% endfor %}
+  <option value="range">Custom date range…</option>
+</select>
+<div class="row g-2 mt-1 d-none" data-keep-range>
+  <div class="col-6"><label class="form-label small mb-0" for="keep-from-{{ scope }}">From</label><input type="date" class="form-control form-control-sm" id="keep-from-{{ scope }}" name="keep_from"></div>
+  <div class="col-6"><label class="form-label small mb-0" for="keep-to-{{ scope }}">To</label><input type="date" class="form-control form-control-sm" id="keep-to-{{ scope }}" name="keep_to"></div>
+</div>
+<div class="form-text mb-2" data-keep-help></div>
+<div class="alert alert-warning py-2 px-3 small mb-3"><i class="bi bi-info-circle me-1"></i>ZKTeco devices can only be cleared <b>completely</b> – they have no command to delete by date. The period you choose is checked record by record and stays available in the portal (Punch logs and reports); the device starts empty.</div>

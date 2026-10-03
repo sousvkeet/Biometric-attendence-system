@@ -15,7 +15,7 @@
     <td class="small">{{ r.removed_at|dtime:"d M Y" }}</td><td class="small">{{ r.removed_by|default:"" }}</td>
     <td class="small">{% if not r.remove_from_devices %}<span class="text-secondary">Kept (portal-only delete)</span>{% endif %}
       {% for x in r.removals.all %}<span class="badge {% if x.status == 'done' %}bg-soft-success{% elif x.status == 'skipped' %}bg-soft-warning{% else %}bg-soft-secondary{% endif %} me-1" title="{{ x.message }}">{{ x.device.name }}: {{ x.get_status_display }}</span>{% endfor %}</td>
-    <td class="text-end"><form method="post" action="{% url 'employees:restore' r.pk %}" data-confirm="Restore {{ r.name }}? They will be added back to the portal and the devices.">{% csrf_token %}
+    <td class="text-end"><form method="post" action="{% url 'employees:restore' r.pk %}" data-confirm="Restore {{ r.name }}? They will be added back to the portal and the devices." data-confirm-title="Restore employee">{% csrf_token %}
       <button class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore</button></form></td></tr>
   {% empty %}<tr><td colspan="7"><div class="empty-state"><i class="bi bi-trash"></i>No removed employees.</div></td></tr>{% endfor %}</tbody>
 </table></div></div>
