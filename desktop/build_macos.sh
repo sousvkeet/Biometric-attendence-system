@@ -20,9 +20,14 @@ mkdir -p "$OUT"
 rm -f "$OUT"/*"$VERSION"-macos-"$ARCH"* "$OUT/screenshot-$ARCH.png"
 
 step "Python build environment"
+if [ "$ARCH" = "x86_64" ] && command -v brew >/dev/null; then
+    # cryptography no longer publishes Intel Mac wheels, so pip compiles it: link OpenSSL statically, like the
+    # official wheels (a dynamic libssl would clash with Python's own libssl in the app bundle)
+    export OPENSSL_DIR="$(brew --prefix openssl@3)" OPENSSL_STATIC=1
+fi
 "$PY_BASE" -m venv "$WORK/venv"
 PY="$WORK/venv/bin/python"
-"$PY" -m pip install -q --disable-pip-version-check -r requirements.txt -r desktop/requirements-desktop-mac.txt
+"$PY" -m pip install -q --disable-pip-version-check --no-cache-dir -r requirements.txt -r desktop/requirements-desktop-mac.txt
 "$PY" -c "import sqlite3, ssl, platform; print('  Python', platform.python_version(), '| SQLite', sqlite3.sqlite_version, '|', ssl.OPENSSL_VERSION)"
 
 step "Icon and static files"
@@ -43,6 +48,10 @@ BIOATTEND_VERSION="$VERSION" "$PY" -m PyInstaller desktop/bioattend-mac.spec --n
     --distpath "$WORK/dist" --workpath "$WORK/work"
 APP="$WORK/dist/BioAttend.app"
 BIN="$APP/Contents/MacOS/BioAttend"
+RUST_EXT="$(find "$APP" -name '_rust.abi3.so' | head -1)"
+if otool -L "$RUST_EXT" | grep -q 'libssl\|libcrypto'; then
+    echo "cryptography is linked to a separate OpenSSL library - it would clash with Python's:"; otool -L "$RUST_EXT"; exit 1
+fi
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 echo "  $(find "$APP" -type f | wc -l | tr -d ' ') files, $(du -sh "$APP" | cut -f1), $(lipo -archs "$BIN"), signed ad hoc"
@@ -67,15 +76,24 @@ for _ in $(seq 1 60); do sleep 1; check_portal 2>/dev/null && break; done
 check_portal || { cat "$SMOKE/service.log"; exit 1; }
 test -f "$HOME/Library/LaunchAgents/com.bioattend.app.plist" && echo "  start-at-login LaunchAgent written"
 
+"$BIN" --quit
+for _ in $(seq 1 20); do sleep 1; pgrep -f "$BIN --background" >/dev/null || break; done
+if pgrep -f "$BIN --background" >/dev/null; then echo "the service did not quit"; cat "$SMOKE/service.log"; exit 1; fi
+echo "  quit cleanly"
+
 if [ "${BIOATTEND_WINDOW_TEST:-}" = "1" ]; then
-    step "Smoke test: the window (opens for 25 s)"
-    BIOATTEND_WINDOW_SMOKE_SECONDS=25 "$BIN" > "$SMOKE/window.log" 2>&1 &
-    WINDOW_PID=$!
+    step "Smoke test: opening the app like a double-click (window shown for 25 s)"
+    # The app starts its own background service, shows the window, and the service keeps running afterwards.
+    open -W -n --env BIOATTEND_WINDOW_SMOKE_SECONDS=25 --env HOME="$HOME" --env BIOATTEND_HOME="$BIOATTEND_HOME" \
+        --stdout "$SMOKE/window.log" --stderr "$SMOKE/window.log" "$APP" &
+    OPEN_PID=$!
     sleep 18
     screencapture -x "$OUT/screenshot-$ARCH.png" 2>/dev/null && echo "  screenshot saved" || echo "  (no screenshot possible here)"
-    wait "$WINDOW_PID" || true
+    wait "$OPEN_PID" || true
     cat "$SMOKE/window.log"
     grep -q "window loaded: http://127.0.0.1" "$SMOKE/window.log" || { echo "the window did not load the portal"; exit 1; }
+    check_portal || { echo "the background service stopped when the window closed"; exit 1; }
+    echo "  the background service keeps running after the window closed"
 fi
 
 "$BIN" --quit
