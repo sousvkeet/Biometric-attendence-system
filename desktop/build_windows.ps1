@@ -21,7 +21,7 @@
 #>
 param(
     [string]$Python = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
-    [string]$Version = "1.0.4",
+    [string]$Version = "1.0.5",
     [string]$CertThumbprint = "",
     [string]$PfxPath = "",
     [string]$PfxPassword = "",

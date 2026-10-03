@@ -1,0 +1,7 @@
+# Extra packages for the Linux desktop app (on top of ../requirements.txt).
+# pillow is only used at build time to draw the icon (it is not bundled).
+waitress==3.0.2
+tzlocal==5.3.1
+tzdata==2025.2
+pyinstaller==6.16.0
+pillow==11.3.0

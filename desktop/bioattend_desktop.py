@@ -1,13 +1,18 @@
-"""BioAttend for Windows – the whole system in one desktop app (no server needed).
+"""BioAttend for Windows, Linux and macOS – the whole system in one desktop app (no server needed).
 
 Runs the web portal (waitress, localhost), the device worker (live punches, syncs, scheduled backups) and the
-SQLite database inside this process, shows the portal in a WebView2 window and keeps working from the system
-tray when the window is closed.
+SQLite database inside this process and keeps working in the background when the window is closed.
+Windows: WebView2 window + system tray icon. Linux: browser app window + launcher actions (linux_desktop.py).
+macOS: the app is the window (WebKit) with a menu of actions; the server runs as a background process (mac_desktop.py).
 
     BioAttend.exe                 start (or bring the running app to the front)
-    BioAttend.exe --background    start hidden in the tray (used for "Start with Windows")
-    BioAttend.exe --quit          ask the running app to quit (used by the installer)
-    bioattend-cli.exe <command>   Django management command, e.g.  bioattend-cli.exe production_check
+    BioAttend.exe --background    start hidden (used for "Start with Windows" / start at login)
+    BioAttend.exe --quit          ask the running app to quit (used by the installers)
+    BioAttend.exe --backup        back up now with the saved settings
+    BioAttend.exe --reset-password   new password for the main administrator
+    BioAttend.exe --open-data     open the data folder
+    BioAttend.exe --autostart on|off, --lan on|off   change the start-at-login / network access settings
+    bioattend-cli.exe <command>   Django management command (Linux: bioattend manage <command>)
 """
 import json
 import os
@@ -20,17 +25,25 @@ import webbrowser
 from pathlib import Path
 
 APP_NAME = "BioAttend"
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 DEFAULT_PORT = 30009
 OLD_DEFAULT_PORTS = {"8090"}  # earlier versions used 8090
 IS_WINDOWS = os.name == "nt"
+IS_LINUX = sys.platform.startswith("linux")
+IS_MAC = sys.platform == "darwin"
+if IS_LINUX:
+    import linux_desktop as linux
+if IS_MAC:
+    import mac_desktop as mac
 
 
 # ---------------------------------------------------------------- paths and configuration
 def app_home():
     base = os.environ.get("BIOATTEND_HOME")
+    if not base and IS_MAC:
+        base = str(Path.home() / "Library" / "Application Support" / APP_NAME)
     if not base:
-        root = os.environ.get("LOCALAPPDATA") or str(Path.home() / ".local" / "share")
+        root = os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
         base = os.path.join(root, APP_NAME)
     path = Path(base)
     for sub in ("", "data", "data/log", "run", "webview"):
@@ -166,10 +179,14 @@ class ControlServer(threading.Thread):
                 if not secrets.compare_digest(token, self.token):
                     continue
                 conn.sendall(b"ok")
-                if command == "show":
+                if command == "ping":
+                    pass
+                elif command == "show":
                     self.app.show()
                 elif command == "backup":
                     self.app.backup_now()
+                elif command == "reset-password":
+                    self.app._reset_admin_password()
                 elif command == "quit":
                     threading.Thread(target=self.app.quit, daemon=True).start()
 
@@ -180,6 +197,10 @@ def message_box(text, title=APP_NAME, error=False):
         import ctypes
         flags = 0x10 if error else 0x40  # MB_ICONERROR / MB_ICONINFORMATION
         ctypes.windll.user32.MessageBoxW(None, text, title, flags | 0x10000)  # MB_SETFOREGROUND
+    elif IS_LINUX:
+        linux.message_box(text, title, error)
+    elif IS_MAC:
+        mac.message_box(text, title, error)
     else:
         print(f"[{title}] {text}")
 
@@ -187,7 +208,9 @@ def message_box(text, title=APP_NAME, error=False):
 def copy_to_clipboard(text):
     """Put text on the Windows clipboard, excluded from clipboard history and cloud sync (it may be a password)."""
     if not IS_WINDOWS:
-        return False
+        if IS_MAC:
+            return mac.copy_to_clipboard(text)
+        return linux.copy_to_clipboard(text) if IS_LINUX else False
     import ctypes
     from ctypes import wintypes
     user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -247,7 +270,12 @@ def _task_dialog_function():
 def show_password_dialog(username, password):
     """New-password dialog with a "Copy password" button (falls back to auto-copy + message box)."""
     if not IS_WINDOWS:
-        print(f"[{APP_NAME}] user {username}: new password {password}")
+        if IS_LINUX:
+            linux.show_password_dialog(username, password)
+        elif IS_MAC:
+            mac.show_password_dialog(username, password)
+        else:
+            print(f"[{APP_NAME}] user {username}: new password {password}")
         return
     import ctypes
     from ctypes import wintypes
@@ -325,7 +353,9 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 def autostart_enabled():
     if not IS_WINDOWS:
-        return False
+        if IS_MAC:
+            return mac.autostart_enabled()
+        return linux.autostart_enabled() if IS_LINUX else False
     import winreg
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
@@ -336,6 +366,12 @@ def autostart_enabled():
 
 
 def set_autostart(enabled):
+    if not IS_WINDOWS:
+        if IS_LINUX:
+            linux.set_autostart(enabled)
+        elif IS_MAC:
+            mac.set_autostart(enabled)
+        return
     import winreg
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
         if enabled:
@@ -348,8 +384,8 @@ def set_autostart(enabled):
 
 
 def apply_autostart(cfg):
-    """Start with Windows (hidden in the tray) unless the user turned it off; always point at this program."""
-    if not IS_WINDOWS or not getattr(sys, "frozen", False):
+    """Start at sign-in (hidden) unless the user turned it off; always point at this program."""
+    if not (IS_WINDOWS or IS_LINUX or IS_MAC) or not getattr(sys, "frozen", False):
         return
     try:
         set_autostart(cfg.get("AUTOSTART", "true") == "true")
@@ -427,12 +463,68 @@ def run_backup_text(trigger):
     return "Backup failed - open BioAttend → Backups for details.", True
 
 
+def reset_admin_password():
+    """New random password for the main administrator (also lifts a login lockout); shows it with a copy option."""
+    from django.contrib.auth import get_user_model
+    from django.core.cache import cache
+    admin = get_user_model().objects.filter(is_superuser=True, is_active=True).order_by("pk").first()
+    if admin is None:
+        message_box("No administrator yet: complete the first-time setup page in the BioAttend window.")
+        return
+    password = secrets.token_urlsafe(9)
+    admin.set_password(password)
+    admin.save(update_fields=["password"])
+    cache.clear()
+    show_password_dialog(admin.get_username(), password)
+
+
+def prepare_database():
+    """Django ready to use without starting the app (for --backup / --reset-password when it is not running)."""
+    configure_environment(ensure_config())
+    import django
+    django.setup()
+    from django.core.management import call_command
+    call_command("migrate", interactive=False, verbosity=0)
+
+
+def open_data_folder():
+    if IS_WINDOWS:
+        os.startfile(HOME)
+    elif IS_LINUX:
+        linux.open_folder(HOME)
+    else:
+        print(HOME)
+
+
+def change_setting(name, value):
+    """--autostart on|off, --lan on|off"""
+    if value not in ("on", "off"):
+        message_box(f"Use --{name} on  or  --{name} off", error=True)
+        return
+    cfg = ensure_config()
+    key = {"autostart": "AUTOSTART", "lan": "LAN_ACCESS"}[name]
+    cfg[key] = "true" if value == "on" else "false"
+    write_config(cfg)
+    if name == "autostart":
+        if getattr(sys, "frozen", False):
+            set_autostart(value == "on")
+        message_box(f"Start at sign-in turned {value}.")
+    else:
+        message_box(f"Network access turned {value}. Quit BioAttend and start it again to apply"
+                    + (f"; other computers then open http://{socket.gethostname()}:{cfg.get('PORT')}/" if value == "on" else "")
+                    + ".")
+
+
 WINDOW_LOCK = HOME / "run" / "window.lock"
 BELOW_NORMAL_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS = 0x4000, 0x20
 STARTUP_DELAY_SECONDS = 60  # after Windows sign-in, wait before talking to the devices
 
 
 def set_process_priority(priority_class):
+    if IS_LINUX and priority_class == BELOW_NORMAL_PRIORITY_CLASS:
+        linux.set_low_priority()
+    if IS_MAC and priority_class == BELOW_NORMAL_PRIORITY_CLASS:
+        mac.set_low_priority()
     if IS_WINDOWS:
         import ctypes
         from ctypes import wintypes
@@ -475,6 +567,9 @@ def window_process_running():
     return False
 
 
+WINDOW_PID_FILE = HOME / "run" / "window.pid"
+
+
 def run_window(url):
     """The window process: shows the portal; closing it ends this process and frees its memory."""
     from core.osutil import acquire_exclusive_lock
@@ -482,13 +577,70 @@ def run_window(url):
     if lock is None:  # a window is already open
         bring_to_front(find_app_window())
         return
+    WINDOW_PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
     set_process_priority(NORMAL_PRIORITY_CLASS)  # the background process runs below normal
     import webview
     webview.settings["ALLOW_DOWNLOADS"] = True
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
-    webview.create_window(APP_NAME, url, width=1360, height=860, min_size=(960, 640), text_select=True)
-    webview.start(private_mode=False, storage_path=str(HOME / "webview"))
+    window = webview.create_window(APP_NAME, url, width=1360, height=860, min_size=(960, 640), text_select=True)
+    smoke = os.environ.get("BIOATTEND_WINDOW_SMOKE_SECONDS")  # automated test: show the window, then close it
+    if smoke:
+        window.events.loaded += lambda: print(f"window loaded: {window.get_current_url()}", flush=True)
+        threading.Thread(target=lambda: (time.sleep(float(smoke)), window.destroy()), daemon=True).start()
+    webview.start(private_mode=False, storage_path=str(HOME / "webview"), menu=mac_menu(url, window) if IS_MAC else [])
+    WINDOW_PID_FILE.unlink(missing_ok=True)
     lock.close()
+    if IS_MAC and not smoke:
+        cfg = read_config()
+        if cfg.get("TOLD_BACKGROUND") != "true":
+            cfg["TOLD_BACKGROUND"] = "true"
+            write_config(cfg)
+            mac.notify("BioAttend keeps running in the background and collects punches. "
+                       "Actions menu → Quit BioAttend completely stops it.")
+
+
+def mac_menu(url, window):
+    """macOS menu bar: the actions the Windows tray icon offers."""
+    from webview.menu import Menu, MenuAction, MenuSeparator
+
+    def later(fn):
+        return lambda: threading.Thread(target=fn, daemon=True).start()
+
+    def ask_service(command):
+        if not send_to_running(command):
+            message_box("BioAttend is not running in the background. Close this window and open BioAttend again.",
+                        error=True)
+
+    def quit_all():
+        send_to_running("quit")
+        window.destroy()
+    return [Menu("Actions", [
+        MenuAction("Back up now", later(lambda: ask_service("backup"))),
+        MenuAction("Reset administrator password…", later(lambda: ask_service("reset-password"))),
+        MenuSeparator(),
+        MenuAction("Open data folder", later(open_data_folder)),
+        MenuAction("Open in web browser", later(lambda: webbrowser.open(url))),
+        MenuSeparator(),
+        MenuAction("Quit BioAttend completely", later(quit_all)),
+    ])]
+
+
+def mac_open_window():
+    """macOS: BioAttend.app was opened - make sure the background service runs, then show the window."""
+    if mac.running_from_disk_image():
+        message_box("Please drag BioAttend into the Applications folder and open it from there.\n\n"
+                    "Started from the disk image it works now, but cannot start at login.")
+    if not send_to_running("ping"):
+        mac.start_service()
+        for _ in range(60):
+            time.sleep(0.5)
+            if send_to_running("ping"):
+                break
+        else:
+            message_box(f"BioAttend could not start.\n\nDetails: {HOME / 'data' / 'log'}", error=True)
+            return
+    port = json.loads(CONTROL_FILE.read_text(encoding="utf-8"))["web_port"]
+    run_window(f"http://127.0.0.1:{port}/")
 
 
 def bring_to_front(hwnd):
@@ -502,13 +654,15 @@ def bring_to_front(hwnd):
 class DesktopApp:
     """Background process: tray icon, web server and device worker (no window, below-normal priority)."""
 
-    def __init__(self, background):
+    def __init__(self, background, delay_worker=None):
         self.background = background
+        self.delay_worker = background if delay_worker is None else delay_worker
         self.icon = None
         self.server = None
         self.stop = threading.Event()
         self.quitting = False
         self.told_tray = False
+        self.window_proc = None  # Linux: the browser app window
 
     # -- startup
     def start_backend(self, cfg, lan):
@@ -530,7 +684,7 @@ class DesktopApp:
         self.url = f"http://127.0.0.1:{self.port}/"
 
     def _run_worker(self):
-        if self.background and self.stop.wait(STARTUP_DELAY_SECONDS):
+        if self.delay_worker and self.stop.wait(STARTUP_DELAY_SECONDS):
             return  # quit during the start-up delay
         from core.management.commands.run_worker import Command
         while not self.stop.is_set():
@@ -543,6 +697,12 @@ class DesktopApp:
 
     # -- window (separate process, only while it is open)
     def show(self):
+        if IS_LINUX:
+            self._show_linux()
+            return
+        if IS_MAC:
+            mac.open_app()
+            return
         if window_process_running():
             bring_to_front(find_app_window())
             return
@@ -551,6 +711,24 @@ class DesktopApp:
             [sys.executable, os.path.abspath(__file__), "--window", self.url]
         subprocess.Popen(args, close_fds=True)
         threading.Thread(target=self._watch_window, daemon=True, name="window-watch").start()
+
+    def _show_linux(self):
+        if self.window_proc is not None and self.window_proc.poll() is None and linux.focus_window():
+            return
+        self.window_proc = linux.open_window(self.url, HOME / "browser")
+        if self.window_proc is not None:
+            threading.Thread(target=self._watch_browser, args=(self.window_proc,), daemon=True,
+                             name="window-watch").start()
+
+    def _watch_browser(self, proc):
+        started = time.monotonic()
+        proc.wait()
+        # A launch that only handed the URL to an already open browser ends at once: not a closed window.
+        if self.quitting or self.told_tray or time.monotonic() - started < 10:
+            return
+        self.told_tray = True
+        linux.notify("BioAttend keeps running in the background and collects punches. "
+                     "Open it again from the applications menu.")
 
     def _watch_window(self):
         for _ in range(30):  # wait until the window process has started
@@ -623,7 +801,7 @@ class DesktopApp:
         """Back up with the saved destinations and passphrase - no sign-in needed."""
         def work():
             text, error = run_backup_text("tray")
-            notified = False
+            notified = not error and ((IS_LINUX and linux.notify(text)) or (IS_MAC and mac.notify(text)))
             if self.icon is not None and not error:
                 try:
                     self.icon.notify(text, APP_NAME)
@@ -635,19 +813,7 @@ class DesktopApp:
         threading.Thread(target=work, daemon=True, name="tray-backup").start()
 
     def _reset_admin_password(self, icon=None, item=None):
-        def work():
-            from django.contrib.auth import get_user_model
-            from django.core.cache import cache
-            admin = get_user_model().objects.filter(is_superuser=True, is_active=True).order_by("pk").first()
-            if admin is None:
-                message_box("No administrator yet: complete the first-time setup page in the BioAttend window.")
-                return
-            password = secrets.token_urlsafe(9)
-            admin.set_password(password)
-            admin.save(update_fields=["password"])
-            cache.clear()  # also lifts a login lockout
-            show_password_dialog(admin.get_username(), password)
-        threading.Thread(target=work, daemon=True).start()
+        threading.Thread(target=reset_admin_password, daemon=True).start()
 
     def quit(self):
         if self.quitting:
@@ -658,6 +824,14 @@ class DesktopApp:
         if hwnd:
             import ctypes
             ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE: close the window process too
+        if self.window_proc is not None and self.window_proc.poll() is None:
+            self.window_proc.terminate()  # Linux: close the app window too
+        if IS_MAC and WINDOW_PID_FILE.exists():  # macOS: close the window process too
+            try:
+                import signal
+                os.kill(int(WINDOW_PID_FILE.read_text(encoding="utf-8")), signal.SIGTERM)
+            except (OSError, ValueError):
+                pass
         if self.server is not None:
             try:
                 self.server.close()
@@ -668,6 +842,13 @@ class DesktopApp:
 
     def run(self):
         """Tray icon on the main thread; returns when the user quits."""
+        if IS_LINUX or IS_MAC:  # no tray icon (see linux_desktop.py / mac_desktop.py): wait until "Quit"
+            if not self.background:
+                self.show()
+            while not self.stop.wait(1):
+                pass
+            self.quit()
+            return
         self.build_tray()
 
         def setup(icon):
@@ -680,7 +861,7 @@ class DesktopApp:
 
 
 def main():
-    args = sys.argv[1:]
+    args = [a for a in sys.argv[1:] if not a.startswith("-psn_")]  # old macOS adds a process serial number
     redirect_std_streams()
     exe_name = Path(sys.executable).stem.lower()
     cli = exe_name.endswith("-cli")
@@ -691,6 +872,10 @@ def main():
         execute_from_command_line(["manage.py", *(args if cli else args[1:])])
         return
 
+    if IS_MAC and not args:  # BioAttend.app opened from Finder / the Dock / Launchpad
+        mac_open_window()
+        return
+
     if args and args[0] == "--window":  # the window process (started by the background process)
         run_window(args[1] if len(args) > 1 else f"http://127.0.0.1:{DEFAULT_PORT}/")
         return
@@ -698,28 +883,47 @@ def main():
     from core.osutil import acquire_exclusive_lock
     if args and args[0] == "--quit":
         sys.exit(0 if send_to_running("quit") else 1)
-    if args and args[0] == "--backup":  # Start-menu shortcut "Back up BioAttend now"
+    if args and args[0] == "--backup":  # Start-menu shortcut / launcher action "Back up now"
         if send_to_running("backup"):
             return
-        configure_environment(ensure_config())
-        import django
-        django.setup()
-        from django.core.management import call_command
-        call_command("migrate", interactive=False, verbosity=0)
+        prepare_database()
         text, error = run_backup_text("shortcut")
         message_box(text, error=error)
+        return
+    if args and args[0] == "--reset-password":
+        if not send_to_running("reset-password"):
+            prepare_database()
+            reset_admin_password()
+        return
+    if args and args[0] == "--open-data":
+        open_data_folder()
+        return
+    if args and args[0] in ("--autostart", "--lan"):
+        change_setting(args[0][2:], args[1] if len(args) > 1 else "")
+        return
+    if args and args[0] == "--uninstall" and (IS_LINUX or IS_MAC):  # remove menu entry / start at login
+        send_to_running("quit")
+        if IS_LINUX:
+            linux.remove_user_integration()
+        else:
+            mac.set_autostart(False)
+        message_box("BioAttend was removed from " + ("the applications menu and from " if IS_LINUX else "")
+                    + "start at login.\n"
+                    f"Your data is kept in {HOME} - delete that folder to remove it too.")
         return
     lock = acquire_exclusive_lock(HOME / "run" / "app.lock")
     if lock is None:  # already running: bring it to the front
         if not send_to_running("show"):
-            message_box("BioAttend is already running (see the tray icon).")
+            message_box("BioAttend is already running" + (" (see the tray icon)." if IS_WINDOWS else "."))
         return
 
     cfg = ensure_config()
     lan = configure_environment(cfg)
     apply_autostart(cfg)
+    if IS_LINUX:
+        linux.install_user_launcher()
     set_process_priority(BELOW_NORMAL_PRIORITY_CLASS)  # never compete with the user's programs
-    app = DesktopApp(background="--background" in args)
+    app = DesktopApp(background="--background" in args, delay_worker="--background" in args and "--now" not in args)
     try:
         app.start_backend(cfg, lan)
     except Exception as exc:

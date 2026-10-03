@@ -1,4 +1,4 @@
-"""Draws the BioAttend icon (green rounded square with a white fingerprint) -> desktop/bioattend.ico + .png"""
+"""Draws the BioAttend icon (green rounded square with a white fingerprint) -> desktop/bioattend.ico, .png and .icns"""
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -24,4 +24,8 @@ if __name__ == "__main__":
     image = draw()
     image.save(HERE / "bioattend.png")
     image.save(HERE / "bioattend.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    try:  # macOS app icon (desktop/build_macos.sh falls back to iconutil when this is not possible)
+        image.resize((512, 512), Image.LANCZOS).save(HERE / "bioattend.icns")
+    except Exception as exc:
+        print(f"no .icns written: {exc}")
     print("icon written")

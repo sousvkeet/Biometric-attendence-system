@@ -5,14 +5,21 @@ register employees, sync users and fingerprints across several devices, download
 
 ## Download
 
-Windows app (complete system, no server needed): **[Releases](https://github.com/sousvkeet/Biometric-attendence-system/releases/latest)**
+Desktop apps for Windows, Linux and Mac (complete system, no server needed):
+**[Releases](https://github.com/sousvkeet/Biometric-attendence-system/releases/latest)**
 
 | File | For |
 |---|---|
-| `BioAttend-Setup-<version>.exe` | One user, no administrator rights |
-| `BioAttend-<version>.msi` | IT deployment for all users (Group Policy / Intune / SCCM) |
-| `BioAttend-portable-<version>.zip` | No installation |
-| `BioAttend-CodeSigning.cer` + `Trust-BioAttend-Certificate.ps1` | Make office PCs trust the digital signature |
+| `BioAttend-Setup-<version>.exe` | Windows: one user, no administrator rights |
+| `BioAttend-<version>.msi` | Windows: IT deployment for all users (Group Policy / Intune / SCCM) |
+| `BioAttend-portable-<version>.zip` | Windows: no installation |
+| `BioAttend-CodeSigning.cer` + `Trust-BioAttend-Certificate.ps1` | Windows: make office PCs trust the digital signature |
+| `bioattend_<version>_amd64.deb` | Linux: Ubuntu, Debian, Mint |
+| `bioattend-<version>-1.x86_64.rpm` | Linux: Fedora, RHEL, Rocky, Alma |
+| `BioAttend-<version>-x86_64.AppImage` | Linux: any distribution, no installation |
+| `BioAttend-<version>-linux-x86_64.tar.gz` | Linux: any distribution, no installation |
+| `BioAttend-<version>-macos-arm64.dmg` | Mac with Apple Silicon (M1–M4) |
+| `BioAttend-<version>-macos-x86_64.dmg` | Mac with an Intel processor |
 
 ## Installation
 
@@ -22,6 +29,14 @@ troubleshooting. Run `manage.py production_check` before going live.
 
 **Windows desktop app (no server):** see **[docs/WINDOWS_APP.md](docs/WINDOWS_APP.md)**. `BioAttend-Setup.exe` installs the
 complete system on one Windows PC (window + system tray, built-in database, live punches, backups); no Python or server needed.
+
+**Linux desktop app (no server):** see **[docs/LINUX_APP.md](docs/LINUX_APP.md)**. The same complete system as an AppImage,
+.deb, .rpm or .tar.gz for Ubuntu 22.04+, Debian 12+, Fedora, RHEL 9+ and others. It runs in the background, starts at login, and opens as
+an app window; no Python or server needed. Build it with `desktop/build_linux.sh` (Docker).
+
+**Mac app (no server):** see **[docs/MAC_APP.md](docs/MAC_APP.md)**. The same complete system for macOS 12+ (Apple Silicon and
+Intel): a native window with an Actions menu, running in the background and starting at login. It is built on GitHub's
+Macs (`.github/workflows/mac-app.yml`) or on any Mac with `desktop/build_macos.sh`.
 
 **Quick start / development:**
 
@@ -127,6 +142,8 @@ You can also add simulator devices in the UI (Driver = Simulator) to try the sys
 * **Back up without signing in:**
   * command line: `manage.py backup_now [--with-logins | --without-logins]`
   * Windows app: tray → *Back up now*, or the Start-menu shortcut *Back up BioAttend now*
+  * Linux app: right-click the launcher → *Back up now*, or `bioattend --backup`
+  * Mac app: *Actions → Back up now*
 * rclone: create the remote with `rclone config` on any computer with a browser, then paste the output of
   `rclone config show NAME` into the destination (stored encrypted; refreshed tokens are saved automatically).
   The portal uses `var/bin/rclone` (downloaded v1.75.1, checksum-verified) or `rclone` on the PATH; set

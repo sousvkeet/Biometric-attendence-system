@@ -1,0 +1,8 @@
+# Extra packages for the macOS desktop app (on top of ../requirements.txt).
+# pywebview brings pyobjc (WebKit window); pillow is only used at build time to draw the icon.
+waitress==3.0.2
+pywebview==5.4
+tzlocal==5.3.1
+tzdata==2025.2
+pyinstaller==6.16.0
+pillow==11.3.0

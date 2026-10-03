@@ -1,0 +1,39 @@
+# Builds BioAttend for Linux (AppImage, .deb, .rpm, .tar.gz) on a GitHub-hosted runner
+# (manual: Actions tab -> "Run workflow"). Same build as desktop/build_linux.sh on a local PC.
+name: Linux app
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number (empty: APP_VERSION from desktop/bioattend_desktop.py)"
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Run the test suite
+        env:
+          SECRET_KEY: ci-only-not-secret-0123456789abcdefghijklmnopqrstuvwxyz
+          LOG_TO_FILE: "false"
+        run: |
+          python -m pip install -r requirements.txt
+          python manage.py test
+
+      - name: Build AppImage, .deb, .rpm and .tar.gz (AlmaLinux 9 + Debian 12 containers)
+        run: desktop/build_linux.sh ${{ github.event.inputs.version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BioAttend-Linux
+          path: dist/linux/*
