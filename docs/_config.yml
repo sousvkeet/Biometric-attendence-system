@@ -1,0 +1,9 @@
+# GitHub Pages site: https://sousvkeet.github.io/Biometric-attendence-system/
+# index.html is the hand-written landing page; the guides (*.md) are rendered with the default theme.
+title: BioAttend
+description: Biometric attendance management system for ZKTeco devices – web portal and Windows, Linux and Mac apps.
+url: https://sousvkeet.github.io
+baseurl: /Biometric-attendence-system
+lang: en
+plugins:
+  - jekyll-seo-tag

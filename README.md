@@ -1,7 +1,17 @@
-# BioAttend – Biometric Attendance Management System
+# BioAttend – Biometric Attendance System for ZKTeco Devices
 
-Web portal for ZKTeco biometric devices (tested with an **x 2008 / ZLM30_TFT, firmware Ver 6.70**):
-register employees, sync users and fingerprints across several devices, download attendance, and produce reports.
+**BioAttend** is attendance management software for **ZKTeco** fingerprint and RFID terminals. It keeps employees
+and fingerprints in sync across all your devices, collects every punch (live), and turns them into daily and monthly
+attendance reports with Excel export. Run it as a desktop app on **Windows, Linux or Mac**, or on a server with Docker.
+
+**[Website](https://sousvkeet.github.io/Biometric-attendence-system/)** ·
+**[Download](https://github.com/sousvkeet/Biometric-attendence-system/releases/latest)** ·
+[Windows](docs/WINDOWS_APP.md) · [Linux](docs/LINUX_APP.md) · [Mac](docs/MAC_APP.md) · [Server](docs/DEPLOYMENT.md)
+
+![BioAttend dashboard: attendance summary, 7-day chart, device status and live punches](docs/assets/screenshots/dashboard.png)
+
+Works with ZKTeco standalone terminals that use the ZKTeco TCP/IP protocol (port 4370). Tested with the
+**ZKTeco x 2008** (ZLM30_TFT, firmware Ver 6.70) and the **ZKTeco K45 Pro/ID**.
 
 ## Download
 
@@ -64,6 +74,17 @@ The top bar shows "Sync worker online/offline"; `GET /healthz` reports it for mo
 | Leave | Leave types with yearly quota, requests and approvals, balances |
 | Self-service | Employees see their own attendance, apply for leave, report missed punches |
 | Audit | Activity log of admin actions, job log of every device conversation |
+
+## Screenshots
+
+| Attendance | Monthly register |
+|---|---|
+| ![Attendance list with IN/OUT, worked hours and overtime](docs/assets/screenshots/attendance.png) | ![Monthly attendance register with present, absent, late and weekly off](docs/assets/screenshots/monthly-register.png) |
+| **Daily report** | **Devices** |
+| ![Daily attendance report with a missing OUT punch](docs/assets/screenshots/daily-report.png) | ![Device list with memory usage and maintenance actions](docs/assets/screenshots/devices.png) |
+
+The screenshots use made-up demo data. To try BioAttend with the same data, run `manage.py demo_data` on an empty
+database (it refuses to run when employees or devices exist; the demo devices are simulators).
 
 ## How multi-device sync works
 

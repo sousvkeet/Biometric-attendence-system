@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BioAttend – Biometric Attendance System for ZKTeco Devices</title>
+<meta name="description" content="Free attendance software for ZKTeco fingerprint and RFID devices: fingerprint sync across devices, live punches, reports and backups. Windows, Linux, Mac.">
+<link rel="canonical" href="https://sousvkeet.github.io/Biometric-attendence-system/">
+<meta name="theme-color" content="#4f9a2c">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="BioAttend">
+<meta property="og:title" content="BioAttend – Biometric Attendance System for ZKTeco Devices">
+<meta property="og:description" content="Sync users and fingerprints across ZKTeco devices, see live punches, run attendance reports and back up automatically. Free download for Windows, Linux and Mac.">
+<meta property="og:url" content="https://sousvkeet.github.io/Biometric-attendence-system/">
+<meta property="og:image" content="https://sousvkeet.github.io/Biometric-attendence-system/assets/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="BioAttend dashboard with attendance chart, devices and live punches">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "BioAttend",
+  "alternateName": "BioAttend Biometric Attendance Management System",
+  "description": "Biometric attendance management system for ZKTeco fingerprint and RFID devices: syncs users and fingerprints across devices, downloads attendance, shows live punches, produces daily and monthly attendance reports, and backs up the database.",
+  "url": "https://sousvkeet.github.io/Biometric-attendence-system/",
+  "applicationCategory": "BusinessApplication",
+  "applicationSubCategory": "Time and attendance",
+  "operatingSystem": "Windows 10, Windows 11, macOS 12 or newer, Linux (Ubuntu 22.04+, Debian 12+, Fedora, RHEL 9+)",
+  "softwareVersion": "1.0.5",
+  "datePublished": "2026-10-03",
+  "downloadUrl": "https://github.com/sousvkeet/Biometric-attendence-system/releases/latest",
+  "softwareHelp": "https://github.com/sousvkeet/Biometric-attendence-system#readme",
+  "image": "https://sousvkeet.github.io/Biometric-attendence-system/assets/social-preview.png",
+  "screenshot": [
+    "https://sousvkeet.github.io/Biometric-attendence-system/assets/screenshots/dashboard.png",
+    "https://sousvkeet.github.io/Biometric-attendence-system/assets/screenshots/attendance.png",
+    "https://sousvkeet.github.io/Biometric-attendence-system/assets/screenshots/monthly-register.png"
+  ],
+  "featureList": [
+    "Sync users, fingerprints, cards and passwords across several ZKTeco devices",
+    "Incremental, de-duplicated attendance download and live punches",
+    "Daily report, monthly register, late / early / overtime report, Excel and CSV export",
+    "Shifts with automatic shift detection, night shifts, leave and missed-punch requests",
+    "Encrypted backups to local disk, S3, FTP/SFTP, WebDAV and rclone remotes",
+    "Device maintenance: reboot and safe clearing of attendance memory"
+  ],
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+  "sameAs": ["https://github.com/sousvkeet/Biometric-attendence-system"]
+}
+</script>
+<style>
+  :root { --green: #4f9a2c; --dark: #1f3a1c; --ink: #1d2433; --muted: #5b6474; --line: #e3e8e0; --bg: #f6f8f4; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; color: var(--ink); background: #fff; }
+  a { color: #2f6f16; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+  header.top { background: var(--dark); color: #fff; }
+  header.top .wrap { display: flex; align-items: center; gap: 12px; padding: 14px 20px; }
+  header.top img { width: 36px; height: 36px; }
+  header.top strong { font-size: 20px; }
+  header.top nav { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; }
+  header.top nav a { color: #d6ecc8; text-decoration: none; font-size: 15px; }
+  .hero { background: linear-gradient(180deg, var(--dark), #2e5a26); color: #fff; padding: 56px 0 0; }
+  .hero h1 { font-size: clamp(30px, 4.6vw, 48px); line-height: 1.15; margin: 0 0 16px; }
+  .hero p.lead { font-size: 19px; max-width: 760px; color: #e3f2da; margin: 0 0 26px; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 8px; font-weight: 600; text-decoration: none; margin: 0 10px 10px 0; }
+  .btn.primary { background: #7ec850; color: #10240c; }
+  .btn.ghost { border: 1px solid #a9d690; color: #fff; }
+  .hero img.shot { display: block; width: 100%; height: auto; margin-top: 30px; border-radius: 12px 12px 0 0; box-shadow: 0 -6px 40px rgba(0,0,0,.35); }
+  section { padding: 56px 0; }
+  section.alt { background: var(--bg); }
+  h2 { font-size: 30px; line-height: 1.25; margin: 0 0 16px; }
+  h3 { font-size: 20px; margin: 26px 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .card h3 { margin-top: 0; }
+  table { width: 100%; border-collapse: collapse; background: #fff; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: #eef4ea; }
+  code { background: #eef1ec; padding: 1px 6px; border-radius: 5px; font-size: 15px; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+  figure { margin: 0; }
+  figure img { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; }
+  figcaption { color: var(--muted); font-size: 15px; margin-top: 6px; }
+  footer { background: var(--dark); color: #cfe3c4; padding: 30px 0; font-size: 15px; }
+  footer a { color: #e6f4dc; }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <img src="assets/icon-192.png" alt="" width="36" height="36"><strong>BioAttend</strong>
+  <nav aria-label="Main">
+    <a href="#features">Features</a><a href="#devices">Devices</a><a href="#download">Download</a>
+    <a href="#faq">FAQ</a><a href="https://github.com/sousvkeet/Biometric-attendence-system">GitHub</a>
+  </nav>
+</div></header>
+
+<main>
+<div class="hero"><div class="wrap">
+  <h1>Biometric attendance system for ZKTeco devices</h1>
+  <p class="lead"><strong>BioAttend</strong> is attendance management software for ZKTeco fingerprint and RFID
+    terminals. It keeps employees and fingerprints in sync across all your devices, collects every punch, and
+    turns them into daily and monthly attendance reports. Run it on one office PC (Windows, Linux or Mac), or
+    on a server with Docker.</p>
+  <a class="btn primary" href="https://github.com/sousvkeet/Biometric-attendence-system/releases/latest">Download BioAttend 1.0.5</a>
+  <a class="btn ghost" href="https://github.com/sousvkeet/Biometric-attendence-system">Source code on GitHub</a>
+  <img class="shot" src="assets/screenshots/dashboard.png" width="1440" height="900"
+       alt="BioAttend dashboard: present, absent and late counts, a 7-day attendance chart, device status and live punches from two ZKTeco devices">
+</div></div>
+
+<section id="what"><div class="wrap">
+  <h2>What is BioAttend?</h2>
+  <p>BioAttend is a biometric attendance management system that connects directly to ZKTeco attendance devices
+    over the local network (TCP port 4370). It downloads attendance records, shows punches live as people use the
+    device, and sends new or changed employees to every device. A fingerprint enrolled on one device is copied
+    to all others on the next sync, so staff can punch at any entrance. Attendance is calculated from shifts:
+    the first punch of the day counts as IN, the last as OUT, and late arrivals, early leaving, overtime and
+    missing OUT punches are flagged. Reports export to Excel and CSV. Everything runs on your own computer or
+    server; no cloud account is needed, and attendance data stays in your office.</p>
+</div></section>
+
+<section id="features" class="alt"><div class="wrap">
+  <h2>Features</h2>
+  <div class="grid">
+    <div class="card"><h3>Multi-device sync</h3><p>Users, fingerprints, RFID cards and passwords are kept the same on
+      every ZKTeco device. New fingerprints from an enroll machine are copied to all others. A dry-run preview
+      shows every change before it is made.</p></div>
+    <div class="card"><h3>Live punches</h3><p>Punches appear on the dashboard and the live monitor as people
+      use the device. Attendance is also downloaded every 5 minutes, without duplicates.</p></div>
+    <div class="card"><h3>Attendance reports</h3><p>Daily report, monthly register (P / A / half day / leave /
+      holiday / weekly off), late, early-leave and overtime reports, and per-employee attendance cards, all with Excel export.</p></div>
+    <div class="card"><h3>Shifts and leave</h3><p>Shifts with grace times and night shifts, automatic shift
+      detection from the punch time, holidays, leave types with yearly quotas, and approval of leave and
+      missed-punch requests.</p></div>
+    <div class="card"><h3>Backups</h3><p>Scheduled, encrypted database backups to the local disk, Amazon S3 or
+      compatible storage, FTP/SFTP, WebDAV, or Google Drive and OneDrive through rclone, with restore from the
+      web page.</p></div>
+    <div class="card"><h3>Safe for your devices</h3><p>Nothing is deleted from a device automatically.
+      Clearing a full attendance memory is a manual step, and only after every record has been saved and checked.
+      Devices can also be set to read-only.</p></div>
+  </div>
+</div></section>
+
+<section id="devices"><div class="wrap">
+  <h2>Which ZKTeco devices work with BioAttend?</h2>
+  <p>BioAttend works with ZKTeco standalone attendance terminals that use the ZKTeco TCP/IP protocol on port 4370,
+    the protocol that ZKTime.Net and similar software use. It has been tested with the <strong>ZKTeco x 2008</strong>
+    (ZLM30_TFT platform, firmware 6.70) and the <strong>ZKTeco K45 Pro/ID</strong>. Fingerprints, RFID cards and
+    device passwords are synced. Face templates cannot be transferred, so face-only devices collect attendance but
+    faces must be enrolled on each device. For copied fingerprints to work, all devices must use the same
+    fingerprint algorithm version, which BioAttend shows on each device page.</p>
+  <h3>How does multi-device sync work?</h3>
+  <p>Each person is identified by their user ID (PIN), which is the same on every device. A new employee
+    registered in BioAttend is sent to all devices at once. The fingerprint is enrolled on any one device, and
+    the next sync copies it to the others. Existing users are only rewritten when their name, card or password
+    actually changed, and a user ID that belongs to a different person on a device is reported as a conflict
+    and left untouched.</p>
+</div></section>
+
+<section id="screenshots" class="alt"><div class="wrap">
+  <h2>Screenshots</h2>
+  <div class="gallery">
+    <figure><img src="assets/screenshots/attendance.png" width="1440" height="900" loading="lazy"
+      alt="Attendance list with first punch as IN, last punch as OUT, worked hours, overtime and status for each employee">
+      <figcaption>Attendance with filters, worked hours and overtime</figcaption></figure>
+    <figure><img src="assets/screenshots/monthly-register.png" width="1440" height="900" loading="lazy"
+      alt="Monthly attendance register showing present, absent, late and weekly off for every employee and day">
+      <figcaption>Monthly attendance register</figcaption></figure>
+    <figure><img src="assets/screenshots/daily-report.png" width="1440" height="900" loading="lazy"
+      alt="Daily attendance report with in and out times, late minutes and status per employee">
+      <figcaption>Daily report</figcaption></figure>
+    <figure><img src="assets/screenshots/devices.png" width="1440" height="900" loading="lazy"
+      alt="Device list with users, fingerprints, attendance memory usage, clock drift and maintenance actions">
+      <figcaption>Devices: status, memory usage and maintenance</figcaption></figure>
+  </div>
+  <p class="muted">Screenshots use made-up demo data (<code>manage.py demo_data</code>).</p>
+</div></section>
+
+<section id="download"><div class="wrap">
+  <h2>Download BioAttend</h2>
+  <p>Every download contains the complete system (web portal, device connection, database and backups). No
+    Python or separate database is needed.</p>
+  <table>
+    <thead><tr><th>Your computer</th><th>Download</th><th>Guide</th></tr></thead>
+    <tbody>
+      <tr><td>Windows 10 / 11</td><td>Setup (.exe), MSI for IT deployment, or portable .zip</td><td><a href="WINDOWS_APP.html">Windows guide</a></td></tr>
+      <tr><td>Ubuntu, Debian, Mint</td><td>.deb package or AppImage</td><td><a href="LINUX_APP.html">Linux guide</a></td></tr>
+      <tr><td>Fedora, RHEL, Rocky, Alma</td><td>.rpm package or AppImage</td><td><a href="LINUX_APP.html">Linux guide</a></td></tr>
+      <tr><td>Mac (Apple Silicon or Intel)</td><td>.dmg for macOS 12 or newer</td><td><a href="MAC_APP.html">Mac guide</a></td></tr>
+      <tr><td>Server (many users)</td><td>Docker Compose with PostgreSQL, or a Linux server with systemd</td><td><a href="DEPLOYMENT.html">Deployment guide</a></td></tr>
+    </tbody>
+  </table>
+  <p><a class="btn primary" href="https://github.com/sousvkeet/Biometric-attendence-system/releases/latest">Go to the latest release</a></p>
+</div></section>
+
+<section id="faq" class="alt"><div class="wrap">
+  <h2>Frequently asked questions</h2>
+  <h3>Do I need a server to use BioAttend?</h3>
+  <p>No. The Windows, Linux and Mac apps contain the whole system and run on one office PC. It keeps collecting
+    punches in the background and starts with the computer. A server setup (Docker or systemd) is available
+    when many people need to use BioAttend at the same time.</p>
+  <h3>Does BioAttend need an internet connection?</h3>
+  <p>No. BioAttend talks to the devices on the local network. Internet is only needed if you choose to send
+    backups to cloud storage.</p>
+  <h3>Can BioAttend replace ZKTime.Net?</h3>
+  <p>For most offices, yes. It covers device management, user and fingerprint sync across devices, attendance
+    download, shifts, leave and reports. Run only one program against a device at a time, so that the two
+    programs do not change the same users.</p>
+  <h3>How much does BioAttend cost?</h3>
+  <p>BioAttend is free to download. The source code is on GitHub.</p>
+  <h3>Where is the attendance data stored?</h3>
+  <p>In a database on your own computer or server: SQLite in the desktop apps, PostgreSQL on a server. Backups
+    are encrypted with a passphrase you choose.</p>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  <p><strong>BioAttend</strong> – biometric attendance management for ZKTeco devices. Version 1.0.5, updated
+    <time datetime="2026-10-03">3 October 2026</time>.</p>
+  <p><a href="https://github.com/sousvkeet/Biometric-attendence-system">GitHub</a> ·
+    <a href="https://github.com/sousvkeet/Biometric-attendence-system/releases">Releases</a> ·
+    <a href="WINDOWS_APP.html">Windows</a> · <a href="LINUX_APP.html">Linux</a> · <a href="MAC_APP.html">Mac</a> ·
+    <a href="DEPLOYMENT.html">Server deployment</a></p>
+  <p class="muted" style="color:#a9c79a">ZKTeco is a trademark of ZKTeco Co., Ltd. BioAttend is an independent project and is not affiliated with ZKTeco.</p>
+</div></footer>
+</body>
+</html>
