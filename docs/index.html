@@ -64,6 +64,10 @@
   header.top strong { font-size: 20px; }
   header.top nav { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; }
   header.top nav a { color: #d6ecc8; text-decoration: none; font-size: 15px; }
+  @media (max-width: 640px) {
+    header.top .wrap { flex-wrap: wrap; }
+    header.top nav { margin-left: 0; width: 100%; gap: 16px; }
+  }
   .hero { background: linear-gradient(180deg, var(--dark), #2e5a26); color: #fff; padding: 56px 0 0; }
   .hero h1 { font-size: clamp(30px, 4.6vw, 48px); line-height: 1.15; margin: 0 0 16px; }
   .hero p.lead { font-size: 19px; max-width: 760px; color: #e3f2da; margin: 0 0 26px; }
