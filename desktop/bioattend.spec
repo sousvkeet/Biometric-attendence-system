@@ -60,8 +60,9 @@ a.datas = [entry for entry in a.datas if wanted(entry[1]) and wanted(entry[0])]
 a.binaries = [entry for entry in a.binaries if "_avif" not in entry[0]]
 pyz = PYZ(a.pure)
 
-app_exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="BioAttend", console=False,
+# upx=False everywhere: compressed (packed) executables are a classic antivirus false-positive trigger
+app_exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="BioAttend", console=False, upx=False,
               icon=ROOT + "/desktop/bioattend.ico", version=ROOT + "/desktop/version_info.txt")
-cli_exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="bioattend-cli", console=True,
+cli_exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="bioattend-cli", console=True, upx=False,
               icon=ROOT + "/desktop/bioattend.ico", version=ROOT + "/desktop/version_info.txt")
-COLLECT(app_exe, cli_exe, a.binaries, a.datas, name="BioAttend")
+COLLECT(app_exe, cli_exe, a.binaries, a.datas, upx=False, name="BioAttend")

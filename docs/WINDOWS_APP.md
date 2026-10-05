@@ -60,6 +60,43 @@ by DigiCert). Windows shows the publisher, and any change to the files breaks th
   All Tasks → Export* (with private key, password-protected). Future updates must be signed with the same
   certificate to stay trusted.
 
+### Sending BioAttend to others (Teams, Outlook, email)
+
+**Microsoft Teams and Outlook block `.exe` and `.msi` attachments by file type.** The message *"This message
+was blocked because it contains a file type that is not permitted"* is not a virus detection. Microsoft 365
+blocks every installer this way, whatever is inside, and no change to the file can get past that rule.
+
+- **Send the link instead of the file:**
+  `https://github.com/sousvkeet/Biometric-attendence-system/releases/latest`
+  (or the website `https://sousvkeet.github.io/Biometric-attendence-system/`).
+- Inside the company, put the installer on SharePoint, OneDrive or a network share and send that link.
+- Your Microsoft 365 administrator can allow `.msi` files for chosen people in the anti-malware policy
+  (Microsoft Defender portal → Policies → Anti-malware → *Common attachments filter*).
+
+### Antivirus and SmartScreen
+
+The Windows builds are made to avoid false alarms from antivirus programs:
+
+- **The launcher is built from source.** BioAttend compiles PyInstaller's launcher (bootloader) itself, instead
+  of shipping the ready-made one that many other programs share and that antivirus heuristics often distrust.
+- **No packing.** The programs are not compressed with UPX or similar tools.
+- **Signed and checksummed.** Every program and installer is signed, and each release lists SHA-256 checksums
+  so anyone can check that a download is unchanged.
+
+**If an antivirus still reports BioAttend** (a false positive), send the file to the vendor for analysis. They
+usually clear it within one or two days:
+
+| Vendor | Where to report |
+|---|---|
+| Microsoft Defender | https://www.microsoft.com/wdsi/filesubmission (choose *Software developer*, *Incorrectly detected as malware*) |
+| Others | Most vendors have a "false positive" form; [VirusTotal](https://www.virustotal.com) shows which engines report a file |
+
+**SmartScreen** (*"Windows protected your PC"*) appears for programs from publishers that Windows does not know
+yet. It is not a virus warning. It disappears when the files are signed with a **publicly trusted**
+code-signing certificate and enough people have downloaded them. Options: Microsoft Artifact Signing (formerly
+Trusted Signing, monthly fee), or an OV/EV certificate from Sectigo, DigiCert or Certum (Certum also offers a
+low-cost certificate for open-source projects). Build with `-CertThumbprint <thumbprint>` once you have one.
+
 ---
 
 ## 2. Everyday use

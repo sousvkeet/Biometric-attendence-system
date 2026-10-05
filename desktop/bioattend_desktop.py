@@ -25,7 +25,7 @@ import webbrowser
 from pathlib import Path
 
 APP_NAME = "BioAttend"
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 DEFAULT_PORT = 30009
 OLD_DEFAULT_PORTS = {"8090"}  # earlier versions used 8090
 IS_WINDOWS = os.name == "nt"

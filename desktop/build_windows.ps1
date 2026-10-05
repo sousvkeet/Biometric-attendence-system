@@ -21,7 +21,7 @@
 #>
 param(
     [string]$Python = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
-    [string]$Version = "1.0.5",
+    [string]$Version = "1.0.6",
     [string]$CertThumbprint = "",
     [string]$PfxPath = "",
     [string]$PfxPassword = "",
@@ -123,6 +123,47 @@ if (-not (Test-Path ".buildvenv\Scripts\python.exe")) { Run $Python @("-m", "ven
 $Py = Join-Path $Root ".buildvenv\Scripts\python.exe"
 Run $Py @("-m", "pip", "install", "--upgrade", "pip", "--quiet")
 Run $Py @("-m", "pip", "install", "--quiet", "-r", "requirements.txt", "-r", "desktop\requirements-desktop.txt")
+
+Step "PyInstaller launcher built from source (fewer antivirus false positives)"
+# PyInstaller's ready-made launcher (bootloader) is shared by countless programs - malware included - so antivirus
+# heuristics often distrust it. BioAttend compiles its own from the PyInstaller source code with the portable
+# MinGW-w64 compiler from WinLibs (pinned release, SHA-256 checked); nothing is installed on this PC.
+$MingwTag = "16.2.0posix-14.0.0-ucrt-r2"
+$MingwZip = "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r2.zip"
+$MingwSha256 = "d5dbafc4a170e762ca6143151ec918fb9e2c72736fb14cd704abebc6bdd5276a"
+$Mingw = Join-Path $Root "desktop\vendor\mingw64"
+$Tar = Join-Path $env:WINDIR "System32\tar.exe"
+function Get-BootloaderPath {
+    (& $Py -c "import os, PyInstaller; print(os.path.join(os.path.dirname(PyInstaller.__file__), 'bootloader', 'Windows-64bit-intel', 'runw.exe'))").Trim()
+}
+function Test-OwnBootloader {   # the stock launcher is built with MSVC; ours with GCC
+    $exe = Get-BootloaderPath
+    return ((Test-Path $exe) -and (Select-String -Path $exe -Pattern "GCC: (" -SimpleMatch -Quiet))
+}
+if (-not (Test-OwnBootloader)) {
+    if (-not (Test-Path "$Mingw\bin\gcc.exe")) {
+        $zip = "desktop\vendor\$MingwZip"
+        Download "https://github.com/brechtsanders/winlibs_mingw/releases/download/$MingwTag/$MingwZip" $zip
+        if ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() -ne $MingwSha256) { Remove-Item $zip; throw "Checksum mismatch for $MingwZip" }
+        Run $Tar @("-xf", $zip, "-C", "desktop\vendor")
+        Remove-Item $zip
+    }
+    $PyiVersion = (& $Py -c "import PyInstaller; print(PyInstaller.__version__)").Trim()
+    $PyiSrc = Join-Path $Root "build\pyinstaller-src"
+    if (Test-Path $PyiSrc) { Remove-Item $PyiSrc -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $PyiSrc | Out-Null
+    Run $Py @("-m", "pip", "download", "--quiet", "--no-deps", "--no-binary", ":all:", "pyinstaller==$PyiVersion", "-d", $PyiSrc)
+    $sdist = Get-ChildItem $PyiSrc -Filter "pyinstaller-*.tar.gz" | Select-Object -First 1
+    Run $Tar @("-xzf", $sdist.FullName, "-C", $PyiSrc)
+    $tree = Join-Path $PyiSrc "pyinstaller-$PyiVersion"
+    $savedPath = $env:PATH
+    $env:PATH = "$Mingw\bin;$env:PATH"
+    Push-Location (Join-Path $tree "bootloader")
+    try { Run $Py @("waf", "distclean", "all", "--target-arch=64bit", "--gcc") } finally { Pop-Location; $env:PATH = $savedPath }
+    Run $Py @("-m", "pip", "install", "--quiet", "--no-deps", "--force-reinstall", $tree)
+    if (-not (Test-OwnBootloader)) { throw "The PyInstaller launcher was not rebuilt from source" }
+}
+"  launcher: $(Get-BootloaderPath) (built from source with GCC)" | Tee-Object -FilePath $Log -Append | Write-Host
 
 Step "Icon"
 Run $Py @("desktop\make_icon.py")
