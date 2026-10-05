@@ -120,6 +120,10 @@ database (it refuses to run when employees or devices exist; the demo devices ar
 * Privileges of users already on a device are never changed. A user ID that exists on a device under a clearly
   different name is reported as a **conflict** and left untouched.
 * Fingerprints are only *added*; the user's existing fingerprints are always re-sent with them so none are lost.
+  The one exception is **Replace a fingerprint** (fingerprint popup): the employee scans again and the new scan
+  replaces the chosen fingerprint on every device. On the device used for the scan, the old fingerprint is removed
+  only for the scan and is put back at once if the scan fails or is cancelled. Offline devices get the new
+  fingerprint at their next sync.
   Device fingerprint memory (800 on the x 2008) is checked first.
 * Deactivating an employee does **not** remove them from the devices (deleting can, see above).
 * **Write protection (read-only)** per device: the portal then only reads. Use *Preview upload (dry run)* to see

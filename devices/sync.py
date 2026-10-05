@@ -39,7 +39,7 @@ from employees.models import PRIVILEGE_CHOICES, Employee, FingerprintTemplate, R
 
 from .drivers import (EVENT_NAMES, WRITABLE_PRIVILEGES, DevFinger, DeviceError, DeviceReadOnly, DevUser,
                       EnrollCancelled, open_session)
-from .models import Device, DeviceJob, DeviceRemoval, DeviceUserLink
+from .models import Device, DeviceJob, DeviceRemoval, DeviceUserLink, FingerprintReplacement
 
 logger = logging.getLogger("devices")
 
@@ -329,6 +329,10 @@ class PreviewSession:
         self._report(f"[preview] would write user {user.user_id} '{user.name}' (uid {user.uid}) with fingers "
                      f"{sorted(f.fid for f in fingers)}")
 
+    def remove_fingers(self, user, finger_ids):
+        self.writes += 1
+        self._report(f"[preview] would replace fingerprint(s) {sorted(finger_ids)} of user {user.user_id} '{user.name}'")
+
 
 def employees_for_device(device, employee_ids=None):
     qs = Employee.objects.filter(status=Employee.STATUS_ACTIVE).filter(
@@ -356,6 +360,10 @@ def push_users(device, report, employee_ids=None, dry_run=False):
         portal_tpls[t.employee_id].append(t)
     links = {l.employee_id: l for l in device.user_links.all()}
     now = timezone.now()
+    replacements = defaultdict(set)  # fingerprints replaced by a new scan: the device still has the old one
+    for emp_id, fid in device.fingerprint_replacements.values_list("employee_id", "finger_index"):
+        replacements[emp_id].add(fid)
+    uploaded = {}  # employee id -> finger numbers written to the device in this run
 
     report(f"{device.name}: comparing {len(targets)} employee(s) with the device...", progress=f"Uploading to {device.name}")
     with open_session(device) as real_session:
@@ -400,6 +408,12 @@ def push_users(device, report, employee_ids=None, dry_run=False):
                     card=emp.card_number or du.card or 0,
                 )
                 have = tpls_by_uid.get(du.uid, {})
+                stale = replacements.get(emp.pk, set()) & set(have)
+                if stale:  # remove the old version of a replaced fingerprint; the new one is uploaded below
+                    s.remove_fingers(du, sorted(stale))
+                    have = {fid: f for fid, f in have.items() if fid not in stale}
+                    fp_free = None if fp_free is None else fp_free + len(stale)
+                    report(f"{device.name}: {emp} - replacing fingerprint(s) {sorted(stale)} with the new scan")
                 missing = fit_fingers([t for t in portal_tpls.get(emp.pk, []) if t.finger_index not in have])
                 details_changed = (final.name != current_name or final.password != (du.password or "")
                                    or int(final.card) != int(du.card or 0))
@@ -424,6 +438,7 @@ def push_users(device, report, employee_ids=None, dry_run=False):
                 else:
                     stats["unchanged"] += 1
                 fids = sorted(set(have) | {t.finger_index for t in missing})
+                uploaded[emp.pk] = {t.finger_index for t in missing}
             else:
                 if not s.supports_text_user_ids and not emp.device_user_id.isdigit():
                     stats["errors"] += 1
@@ -451,6 +466,7 @@ def push_users(device, report, employee_ids=None, dry_run=False):
                     fp_free = None if fp_free is None else fp_free - len(tpls)
                     stats["fingerprints_pushed"] += len(tpls)
                 fids = sorted(t.finger_index for t in tpls)
+                uploaded[emp.pk] = set(fids)
                 report(f"{device.name}: added {emp} (uid {uid}, {len(tpls)} fingerprint(s))")
 
             if dry_run:
@@ -461,6 +477,9 @@ def push_users(device, report, employee_ids=None, dry_run=False):
                               privilege=final.privilege, card_number=final.card or 0,
                               fingers=",".join(map(str, fids)), synced_at=now),
             )
+            done = replacements.get(emp.pk, set()) & uploaded.get(emp.pk, set())
+            if done:
+                FingerprintReplacement.objects.filter(device=device, employee=emp, finger_index__in=done).delete()
 
         changed = stats["created"] or stats["updated"] or stats["fingerprints_pushed"]
         info = s.sizes() if (changed and not dry_run) else None
@@ -848,9 +867,13 @@ def push_employee(employee, report):
     return result
 
 
-def enroll_fingerprint(device, employee, finger_index, report):
+def enroll_fingerprint(device, employee, finger_index, report, replace=False):
     """Start fingerprint enrollment on the device and follow it live; then save the template in the
-    portal and copy it to the employee's other devices."""
+    portal and copy it to the employee's other devices.
+
+    replace=True: register a new scan in place of fingerprint `finger_index`. The old fingerprint is removed from
+    this device first (so the same finger can be scanned again) and put back at once if the new scan fails. After
+    success the other devices get the new fingerprint instead of the old one (offline devices at the next sync)."""
     state = getattr(report, "state", lambda **kw: None)
     should_cancel = getattr(report, "cancelled", lambda: False)
     base = {"device": device.name, "finger": finger_index}
@@ -860,7 +883,7 @@ def enroll_fingerprint(device, employee, finger_index, report):
 
     if device.read_only:
         raise DeviceError(f"{device.name} is write-protected; turn off write protection to register fingerprints.")
-    if employee.fingerprints.filter(finger_index=finger_index).exists():
+    if not replace and employee.fingerprints.filter(finger_index=finger_index).exists():
         raise DeviceError("This finger is already registered for the employee. Choose another finger.")
 
     stage("preparing", f"Registering {employee.name} on {device.name}...")
@@ -878,9 +901,33 @@ def enroll_fingerprint(device, employee, finger_index, report):
         if du is None or du.uid != link.uid or not names_compatible(employee, du, link):
             raise DeviceError(f"The record for ID {employee.device_user_id} on {device.name} does not match "
                               f"{employee.name}; enrollment stopped to protect the other record.")
-        if finger_index in {f.fid for f in s.get_templates() if f.uid == du.uid}:
+        device_fingers = {f.fid: f for f in s.get_templates() if f.uid == du.uid}
+        existing = set(device_fingers)
+        old = None
+        if replace:
+            old = device_fingers.get(finger_index)
+            if old is None and not employee.fingerprints.filter(finger_index=finger_index).exists():
+                raise DeviceError("There is no fingerprint with this number to replace. Register a new finger instead.")
+            if old is not None:
+                s.remove_fingers(du, [finger_index])
+                existing.discard(finger_index)
+                report(f"Old fingerprint no. {finger_index} removed from {device.name} for the new scan "
+                       "(it is put back if the new scan does not succeed).")
+        elif finger_index in existing:
             raise DeviceError("That finger is already registered on this device. Choose another finger "
                               "(existing fingerprints are never overwritten).")
+
+        def restore_old():
+            if old is None:
+                return
+            try:
+                current = [f for f in s.get_templates() if f.uid == du.uid and f.fid != finger_index]
+                s.save_user_template(du, current + [old])
+                report(f"The old fingerprint no. {finger_index} was put back on {device.name} - nothing was lost.")
+            except Exception:
+                logger.exception("Could not restore fingerprint %s of %s on %s", finger_index, employee, device)
+                report(f"WARNING: the old fingerprint could not be put back on {device.name}; it is still saved in "
+                       "the portal and will be uploaded again by the next sync.")
 
         messages = {
             "place": "Place the finger on the device sensor (scan {scan} of {total})",
@@ -902,22 +949,42 @@ def enroll_fingerprint(device, employee, finger_index, report):
             report(f"  [device] {name} data={data.hex() or '-'}")
 
         report(f"{device.name} is waiting for {employee.name}'s finger.")
-        s.enroll_finger(du, finger_index, progress=on_progress, should_cancel=should_cancel, on_event=on_event)
+        try:
+            s.enroll_finger(du, finger_index, progress=on_progress, should_cancel=should_cancel, on_event=on_event)
+        except EnrollCancelled:
+            restore_old()
+            raise
+        except DeviceError as exc:
+            restore_old()
+            # The device compares the new finger with every stored fingerprint at the end (scan 3) and refuses one
+            # that is already registered - often shown on the device as "low quality". Fingers registered on the
+            # device menu are numbered in registration order, so the person may not know which fingers are stored.
+            if existing and "already registered" not in str(exc):
+                raise DeviceError(
+                    f"{exc} {employee.name} already has {len(existing)} fingerprint(s) on {device.name}. The device "
+                    "refuses a finger that is already registered, so place a finger that was never registered "
+                    "before (for example a middle finger).") from exc
+            raise
         new = [f for f in s.get_templates() if f.uid == du.uid and f.fid == finger_index]
-    if not new:
-        raise DeviceError("The device reported success but no fingerprint was stored. Please try again.")
+        if not new:
+            restore_old()
+            raise DeviceError("The device reported success but no fingerprint was stored. Please try again.")
     f = new[0]
     stage("saving", "Fingerprint captured - saving...")
-    FingerprintTemplate.objects.get_or_create(
-        employee=employee, finger_index=finger_index,
-        defaults=dict(template=bytes(f.template), valid=f.valid, size=len(f.template), source_device=device),
-    )
+    others = [d for d in employee.target_devices() if d.pk != device.pk and not d.read_only]
+    with transaction.atomic():
+        FingerprintTemplate.objects.update_or_create(
+            employee=employee, finger_index=finger_index,
+            defaults=dict(template=bytes(f.template), valid=f.valid, size=len(f.template), source_device=device),
+        )
+        if replace:  # every other device must swap the old fingerprint for the new one
+            for d in others:
+                FingerprintReplacement.objects.get_or_create(device=d, employee=employee, finger_index=finger_index)
     link.fingers = ",".join(map(str, sorted({*link.finger_list, finger_index})))
     link.save(update_fields=["fingers"])
     report("Fingerprint captured and saved in the portal.")
 
     copied, failed = [], []
-    others = [d for d in employee.target_devices() if d.pk != device.pk and not d.read_only]
     for d in others:
         stage("copying", f"Copying fingerprint to {d.name}...", copied=copied)
         try:

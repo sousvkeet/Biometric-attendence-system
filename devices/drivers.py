@@ -8,6 +8,7 @@ returned by `open_session(device)`. Sessions expose a deliberately small API:
     write:    set_user(), save_user_template(), set_time(), enroll_finger()
               (add / update only)
     manual:   remove_user()       one employee the admin deleted in the portal
+              remove_fingers()    fingerprints being replaced (restored at once if the new scan fails)
               restart()           reboot (nothing is deleted)
               clear_attendance()  attendance records only, after they are safely in the portal
                                   (see sync.clear_device_attendance - never called automatically)
@@ -64,6 +65,7 @@ def _blocked(name):
 
 # The originals of a few commands are kept privately, each used by exactly one ZKSession method:
 #   delete_user / delete_user_template -> remove_user()  (one employee an admin deleted in the portal)
+#   delete_user_template               -> remove_fingers()  (a fingerprint being replaced by a new scan)
 #   restart                            -> restart()
 #   clear_attendance                   -> clear_attendance()  (only via sync.clear_device_attendance)
 # clear_data (users + fingerprints + attendance) and poweroff are never available.
@@ -279,6 +281,14 @@ class ZKSession:
             _USER_DELETE["delete_user_template"](self.conn, uid=user.uid, temp_id=fid)
         self.conn.refresh_data()
 
+    @_device_call
+    def remove_fingers(self, user: DevUser, finger_ids):
+        """Delete these fingerprints of ONE user (a fingerprint being replaced). User record and other fingers stay."""
+        self._check_writable()
+        for fid in finger_ids:
+            _USER_DELETE["delete_user_template"](self.conn, uid=user.uid, temp_id=fid)
+        self.conn.refresh_data()
+
     # ----- maintenance (manual, admin only)
     @_device_call
     def restart(self):
@@ -352,10 +362,13 @@ EVENT_NAMES = {EF_ATTLOG: "attendance", EF_FINGER: "finger-touch", EF_ENROLLUSER
                EF_ENROLLFINGER: "enroll-result", EF_BUTTON: "button", EF_UNLOCK: "unlock", EF_VERIFY: "verify",
                EF_FPFTR: "scan-quality", EF_ALARM: "alarm"}
 ENROLL_ERRORS = {
-    4: "The enrollment was stopped on the device (timeout or cancelled at the device). Please try again.",
-    5: "This fingerprint is already registered on the device (for this or another person).",
-    6: "The scans did not match. Please try again and place the same finger the same way each time.",
+    4: "The device stopped the enrollment (no finger in time, or cancelled on the device). Please try again.",
+    5: "This fingerprint is already registered on the device (for this or another person). Use a different finger.",
+    6: "The last scan did not match the first ones well enough (the device may show \u201clow quality\u201d). "
+       "Try again: press the same finger flat on the sensor, in the same position every time.",
 }
+ENROLL_ERROR_HINT = ("Try again, pressing the finger flat and still until the device beeps. If it keeps failing, "
+                     "clean and dry the finger and the sensor, or register a different finger.")
 GOOD_SCAN_SCORE = 100
 TCP_MAGIC = (0x5050, 0x7D82)
 
@@ -425,7 +438,8 @@ def follow_enrollment(next_event, progress=None, on_event=None, scans=ENROLL_SCA
             result = unpack("<H", data[:2])[0] if len(data) >= 2 else -1
             if result == 0:
                 return True
-            raise DeviceError(ENROLL_ERRORS.get(result, f"The device reported enrollment error code {result}."))
+            raise DeviceError(ENROLL_ERRORS.get(
+                result, f"The device could not register the finger (device code {result}). {ENROLL_ERROR_HINT}"))
         # any other event (attendance, verify, ...) is unrelated and ignored
 
 
@@ -546,6 +560,13 @@ class SimulatorSession:
         with _sim_lock:
             self.data["users"] = [u for u in self.data["users"] if u["uid"] != user.uid]
             self.data["templates"] = [t for t in self.data["templates"] if t["uid"] != user.uid]
+            self._save()
+
+    def remove_fingers(self, user: DevUser, finger_ids):
+        self._check_writable()
+        with _sim_lock:
+            self.data["templates"] = [t for t in self.data["templates"]
+                                      if not (t["uid"] == user.uid and t["fid"] in set(finger_ids))]
             self._save()
 
     def restart(self):

@@ -139,6 +139,20 @@ class DeviceRemoval(models.Model):
         self.save(update_fields=["status", "message", "updated_at"])
 
 
+class FingerprintReplacement(models.Model):
+    """A fingerprint that was replaced by a new scan and must still be replaced on this device
+    (old template removed, new one uploaded) - done by the next upload/sync to the device."""
+
+    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="fingerprint_replacements")
+    employee = models.ForeignKey("employees.Employee", on_delete=models.CASCADE, related_name="+")
+    finger_index = models.PositiveSmallIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["device", "employee", "finger_index"],
+                                               name="uniq_fingerprint_replacement")]
+
+
 class DeviceUserLink(models.Model):
     """Which portal employee is stored on which device (and under which internal uid)."""
 

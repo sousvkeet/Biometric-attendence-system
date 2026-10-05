@@ -17,7 +17,7 @@ from . import sync
 from .drivers import (DestructiveOperationBlocked, DeviceError, DeviceReadOnly, DevFinger, DevUser,
                       SimulatorSession)
 from .jobs import enqueue, run_pending_jobs
-from .models import Device, DeviceJob, DeviceUserLink
+from .models import Device, DeviceJob, DeviceUserLink, FingerprintReplacement
 
 
 def quiet(*args, **kwargs):
@@ -96,7 +96,9 @@ class SafetyTests(TestCase):
         # Each kept pyzk command is reachable from exactly one ZKSession method.
         src = inspect.getsource(drivers)
         remove_src = inspect.getsource(drivers.ZKSession.remove_user)
-        self.assertEqual(src.count('_USER_DELETE["'), remove_src.count('_USER_DELETE["'))
+        fingers_src = inspect.getsource(drivers.ZKSession.remove_fingers)
+        self.assertEqual(src.count('_USER_DELETE["'), remove_src.count('_USER_DELETE["') + fingers_src.count('_USER_DELETE["'))
+        self.assertNotIn('_USER_DELETE["delete_user"]', fingers_src)  # replacing a fingerprint never deletes the user
         self.assertNotIn("clear_attendance", remove_src)
         self.assertEqual(set(drivers._MAINTENANCE), {"restart", "clear_attendance"})
         for name in ("restart", "clear_attendance"):
@@ -380,6 +382,23 @@ class LiveEnrollmentTests(SimulatorTestCase):
             u = self.users(d)["300"]
             self.assertEqual(self.fingers(d, u["uid"]), [6])
 
+    def test_failure_for_employee_with_fingerprints_explains_duplicates(self):
+        from unittest import mock
+        first = DeviceJob.objects.create(job_type=DeviceJob.TYPE_ENROLL, device=self.a, employee=self.emp,
+                                         payload={"finger_index": 0})
+        run_pending_jobs()  # the employee now has fingerprint 0 on device A
+        first.refresh_from_db()
+        self.assertEqual(first.status, "success", first.log)
+        with mock.patch.object(SimulatorSession, "enroll_finger",
+                               side_effect=sync.DeviceError("The last scan did not match the first ones well enough.")):
+            job = DeviceJob.objects.create(job_type=DeviceJob.TYPE_ENROLL, device=self.a, employee=self.emp,
+                                           payload={"finger_index": 7})
+            run_pending_jobs()
+        job.refresh_from_db()
+        self.assertEqual(job.status, "failed")
+        self.assertIn("already has 1 fingerprint(s) on A", job.result["message"])
+        self.assertIn("never registered before", job.result["message"])
+
     def test_cancel_running_enrollment(self):
         job = DeviceJob.objects.create(job_type=DeviceJob.TYPE_ENROLL, device=self.a, employee=self.emp,
                                        payload={"finger_index": 6}, cancel_requested=True)
@@ -486,7 +505,8 @@ class EnrollmentProtocolTests(TestCase):
 
     def test_device_errors_are_explained(self):
         from .drivers import EF_ENROLLFINGER
-        for code, words in ((5, "already registered"), (6, "did not match"), (4, "stopped on the device"), (9, "code 9")):
+        for code, words in ((5, "already registered"), (6, "did not match"), (6, "same position"),
+                            (4, "device stopped the enrollment"), (9, "device code 9"), (9, "register a different finger")):
             with self.assertRaises(sync.DeviceError) as ctx:
                 self.run_stream([rt_packet(EF_ENROLLFINGER, bytes([code, 0]))])
             self.assertIn(words, str(ctx.exception))
@@ -696,3 +716,80 @@ class MaintenanceTests(SimulatorTestCase):
         self.assertEqual(job.status, "partial", job.log)
         self.assertEqual(job.result["failed_devices"], ["Broken"])
         self.assertEqual(self.state(other)["attendance"], [])
+
+
+class FingerprintReplaceTests(SimulatorTestCase):
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(SimulatorSession, "ENROLL_STEP_SECONDS", 0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.a = self.make_device("A")
+        self.b = self.make_device("B")
+        self.emp = Employee.objects.create(device_user_id="400", name="Long Timer")
+        FingerprintTemplate.objects.create(employee=self.emp, finger_index=0, template=b"OLD-0", valid=1, size=5)
+        FingerprintTemplate.objects.create(employee=self.emp, finger_index=1, template=b"KEEP-1", valid=1, size=6)
+        for d in (self.a, self.b):
+            sync.push_users(d, quiet)
+
+    def device_template(self, device, fid):
+        uid = self.users(device)["400"]["uid"]
+        return next(base64.b64decode(t["template"]) for t in self.state(device)["templates"]
+                    if t["uid"] == uid and t["fid"] == fid)
+
+    def run_replace(self, finger=0):
+        job = DeviceJob.objects.create(job_type=DeviceJob.TYPE_ENROLL, device=self.a, employee=self.emp,
+                                       payload={"finger_index": finger, "replace": True})
+        run_pending_jobs()
+        job.refresh_from_db()
+        return job
+
+    def test_replace_swaps_the_fingerprint_on_every_device(self):
+        job = self.run_replace()
+        self.assertEqual(job.status, "success", job.log)
+        new = bytes(self.emp.fingerprints.get(finger_index=0).template)
+        self.assertNotEqual(new, b"OLD-0")
+        for d in (self.a, self.b):
+            self.assertEqual(self.device_template(d, 0), new)
+            self.assertEqual(self.device_template(d, 1), b"KEEP-1")  # the other finger is untouched
+        self.assertFalse(FingerprintReplacement.objects.exists())
+
+    def test_failed_scan_keeps_the_old_fingerprint(self):
+        with mock.patch.object(SimulatorSession, "enroll_finger", side_effect=sync.DeviceError("scan failed")):
+            job = self.run_replace()
+        self.assertEqual(job.status, "failed")
+        self.assertIn("put back", job.log)
+        self.assertEqual(self.device_template(self.a, 0), b"OLD-0")
+        self.assertEqual(bytes(self.emp.fingerprints.get(finger_index=0).template), b"OLD-0")
+        self.assertFalse(FingerprintReplacement.objects.exists())
+
+    def test_offline_device_is_updated_by_the_next_sync(self):
+        real_push = sync.push_users
+
+        def push(device, *args, **kwargs):
+            if device.pk == self.b.pk:
+                raise sync.DeviceError("B is offline")
+            return real_push(device, *args, **kwargs)
+        with mock.patch.object(sync, "push_users", side_effect=push):
+            job = self.run_replace()
+        self.assertEqual(job.status, "success", job.log)
+        self.assertEqual(self.device_template(self.b, 0), b"OLD-0")  # not reached yet
+        self.assertTrue(FingerprintReplacement.objects.filter(device=self.b, finger_index=0).exists())
+        sync.push_users(self.b, quiet)  # next sync
+        new = bytes(self.emp.fingerprints.get(finger_index=0).template)
+        self.assertEqual(self.device_template(self.b, 0), new)
+        self.assertFalse(FingerprintReplacement.objects.exists())
+
+    def test_view_requires_existing_fingerprint_to_replace(self):
+        from django.contrib.auth import get_user_model
+        self.client.force_login(get_user_model().objects.create_superuser("boss", "", "pw123456"))
+        url = f"/employees/{self.emp.pk}/enroll/"
+        r = self.client.post(url, {"device": self.a.pk, "finger_index": 5, "replace": "1"}, HTTP_ACCEPT="application/json")
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post(url, {"device": self.a.pk, "finger_index": 0}, HTTP_ACCEPT="application/json")
+        self.assertEqual(r.status_code, 400)  # adding a finger number that exists is still refused
+        r = self.client.post(url, {"device": self.a.pk, "finger_index": 0, "replace": "1"}, HTTP_ACCEPT="application/json")
+        self.assertTrue(r.json()["ok"])
+        self.assertTrue(DeviceJob.objects.get(pk=r.json()["job"]).payload["replace"])
+        page = self.client.get(f"/employees/{self.emp.pk}/")
+        self.assertContains(page, "Replace a fingerprint")

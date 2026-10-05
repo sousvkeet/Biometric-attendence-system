@@ -78,6 +78,7 @@ class DesignationForm(BootstrapMixin, forms.ModelForm):
 class EnrollForm(BootstrapMixin, forms.Form):
     device = forms.ModelChoiceField(queryset=Device.objects.none())
     finger_index = forms.TypedChoiceField(choices=FINGER_CHOICES, coerce=int, initial=6, label="Finger")
+    replace = forms.BooleanField(required=False, help_text="Register a new scan in place of this fingerprint.")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

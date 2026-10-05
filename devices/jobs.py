@@ -68,7 +68,8 @@ def _run(job, report):
     if t in (DeviceJob.TYPE_RESTART, DeviceJob.TYPE_CLEAR_ATTENDANCE):
         return _run_maintenance(job, report)
     if t == DeviceJob.TYPE_ENROLL:
-        return sync.enroll_fingerprint(job.device, job.employee, int(p.get("finger_index", 6)), report)
+        return sync.enroll_fingerprint(job.device, job.employee, int(p.get("finger_index", 6)), report,
+                                       replace=bool(p.get("replace")))
     raise ValueError(f"Unknown job type {t}")
 
 

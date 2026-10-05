@@ -10,12 +10,35 @@
       {% if enroll_devices %}
       <form id="enrollForm" method="post" action="{% url 'employees:enroll' employee.pk %}">{% csrf_token %}
         <input type="hidden" name="finger_index" id="fingerInput">
+        <input type="hidden" name="replace" id="replaceInput" value="">
         <div class="mb-3">
           <label class="form-label fw-semibold">1. Device the employee is standing at</label>
           <select name="device" class="form-select">
             {% for d in enroll_devices %}<option value="{{ d.pk }}">{{ d.name }} – {{ d.ip_address }}{% if d.area %} ({{ d.area }}){% endif %}{% if d.status == 'offline' %} – offline!{% endif %}</option>{% endfor %}
           </select>
         </div>
+        {% if enrolled_fingers %}
+        <div class="btn-group w-100 mb-3" role="group" aria-label="What to do">
+          <input type="radio" class="btn-check" name="enroll_mode" id="modeAdd" value="add" checked>
+          <label class="btn btn-outline-success" for="modeAdd"><i class="bi bi-plus-lg me-1"></i>Add a new finger</label>
+          <input type="radio" class="btn-check" name="enroll_mode" id="modeReplace" value="replace">
+          <label class="btn btn-outline-success" for="modeReplace"><i class="bi bi-arrow-repeat me-1"></i>Replace a fingerprint</label>
+        </div>
+        <div id="replaceSection" class="d-none">
+          <label class="form-label fw-semibold">2. Fingerprint to replace</label>
+          <div class="d-flex flex-wrap gap-2" id="replaceChoices">
+            {% for f in enrolled_fingers %}<button type="button" class="btn btn-outline-secondary replace-choice" data-finger="{{ f }}">
+              <i class="bi bi-fingerprint me-1"></i>Fingerprint {{ forloop.counter }} <span class="small text-secondary">(no. {{ f }})</span></button>{% endfor %}
+          </div>
+          <div class="alert alert-info small py-2 mt-3 mb-0">
+            <i class="bi bi-info-circle me-1"></i>The employee scans a finger again and the new scan <strong>replaces the chosen
+            fingerprint</strong> on every device. Use this when a fingerprint reads badly – the same finger can be scanned
+            again. If the new scan does not succeed, the old fingerprint is kept. Fingerprints registered on the device are
+            numbered in the order they were added (no. 0 = the first one).
+          </div>
+        </div>
+        {% endif %}
+        <div id="addSection">
         <label class="form-label fw-semibold">2. Choose a finger</label>
         <div class="hands" data-enrolled="{{ enrolled_fingers|join:',' }}">
           <div class="hand">
@@ -33,8 +56,18 @@
         </div>
         <div class="d-flex flex-wrap gap-3 small text-secondary mt-2">
           <span><span class="legend-dot sel"></span>Selected: <strong id="fingerLabel">–</strong></span>
-          <span><span class="legend-dot done"></span>Already registered</span>
+          <span><span class="legend-dot done"></span>Number already in use</span>
           <span>Tip: register 2 fingers (e.g. both index fingers) as a backup.</span>
+        </div>
+        {% if enrolled_fingers %}
+        <div class="alert alert-warning small py-2 mt-3 mb-0">
+          <i class="bi bi-exclamation-triangle me-1"></i><strong>{{ employee.name }} already has {{ enrolled_fingers|length }} fingerprint{{ enrolled_fingers|length|pluralize }}.</strong>
+          Place a finger that was <strong>never registered before</strong> (for example a middle finger) – the device
+          refuses a finger it already has and shows it as an error at scan 3. Fingerprints registered on the device
+          menu are numbered in the order they were added, so the hand picture cannot show which fingers they are.
+          To scan an existing finger again, choose <strong>Replace a fingerprint</strong> above.
+        </div>
+        {% endif %}
         </div>
         <div class="alert alert-danger py-2 mt-3 d-none" id="enrollSetupError"></div>
       </form>
@@ -71,6 +104,14 @@
           </ol>
         </div>
       </div>
+      <div class="alert alert-light border small mt-3 mb-0" id="scanTips">
+        <strong><i class="bi bi-lightbulb me-1"></i>For a good scan</strong> – the device compares all three scans:
+        <ul class="mb-0 mt-1 ps-3">
+          <li>Use the <strong>same finger in the same position</strong> each time, pressed <strong>flat</strong> so it covers the sensor.</li>
+          <li>Hold still until the device beeps, then <strong>lift the finger completely</strong> before the next scan.</li>
+          <li>Dry or sweaty finger? Wipe it (or breathe on a very dry finger) and keep the sensor glass clean.</li>
+        </ul>
+      </div>
       <div class="alert d-none mt-3 mb-0" id="liveResult"></div>
       <details class="mt-3 small"><summary class="text-secondary">Technical log</summary><pre class="job-log mt-2" id="liveLog" style="max-height:180px"></pre></details>
     </div>
@@ -80,6 +121,7 @@
       <button type="button" class="btn btn-light" data-bs-dismiss="modal" id="btnClose">Close</button>
       <button type="button" class="btn btn-outline-danger d-none" id="btnCancel"><i class="bi bi-x-circle me-1"></i>Cancel</button>
       <button type="button" class="btn btn-outline-primary d-none" id="btnAnother"><i class="bi bi-plus-lg me-1"></i>Register another finger</button>
+      <button type="button" class="btn btn-success d-none" id="btnRetry"><i class="bi bi-arrow-repeat me-1"></i>Try again</button>
       {% if enroll_devices %}<button type="button" class="btn btn-success" id="btnStart" disabled><i class="bi bi-play-fill me-1"></i>Start on device</button>{% endif %}
     </div>
   </div></div>

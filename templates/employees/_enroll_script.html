@@ -3,12 +3,16 @@
   const modalEl = document.getElementById("enrollModal");
   if (!modalEl) return;
   const NAMES = ["Left little","Left ring","Left middle","Left index","Left thumb","Right thumb","Right index","Right middle","Right ring","Right little"];
-  const PREFERRED = [6, 3, 5, 4, 7, 2, 8, 1, 9, 0];
+  // Device-registered fingers are numbered 0, 1, 2... in registration order, so for someone who already has
+  // fingerprints suggest middle fingers first: they are the least likely to be registered already.
+  const PREFERRED_NEW = [6, 3, 5, 4, 7, 2, 8, 1, 9, 0];
+  const PREFERRED_MORE = [7, 2, 8, 1, 6, 3, 5, 4, 9, 0];
   const $ = (id) => document.getElementById(id);
   const form = $("enrollForm");
   const hands = modalEl.querySelector(".hands");
   let enrolled = hands ? hands.dataset.enrolled.split(",").filter(Boolean).map(Number) : [];
-  let selected = null, job = null, pollTimer = null, finished = false, changed = false, lastStep = "queued";
+  let selected = null, job = null, pollTimer = null, finished = false, changed = false, lastStep = "queued", failed = false;
+  let mode = "add";   // "add" a new finger, or "replace" an existing fingerprint
 
   function drawFingers() {
     modalEl.querySelectorAll(".finger").forEach((b) => {
@@ -16,13 +20,31 @@
       b.classList.toggle("done", enrolled.includes(f));
       b.classList.toggle("sel", f === selected);
       b.disabled = enrolled.includes(f);
-      b.title = NAMES[f] + (enrolled.includes(f) ? " (already registered)" : "");
+      b.title = NAMES[f] + (enrolled.includes(f) ? " (number already in use)" : "");
     });
     if ($("fingerLabel")) $("fingerLabel").textContent = selected === null ? "–" : NAMES[selected];
     if ($("fingerInput")) $("fingerInput").value = selected === null ? "" : selected;
-    if ($("btnStart")) $("btnStart").disabled = selected === null;
+    if ($("replaceInput")) $("replaceInput").value = mode === "replace" ? "1" : "";
+    modalEl.querySelectorAll(".replace-choice").forEach((b) => {
+      const on = mode === "replace" && Number(b.dataset.finger) === selected;
+      b.classList.toggle("btn-success", on); b.classList.toggle("btn-outline-secondary", !on);
+    });
+    if ($("btnStart")) {
+      $("btnStart").disabled = selected === null;
+      $("btnStart").innerHTML = mode === "replace" ? '<i class="bi bi-arrow-repeat me-1"></i>Replace on device'
+                                                   : '<i class="bi bi-play-fill me-1"></i>Start on device';
+    }
   }
-  function pickDefault() { selected = PREFERRED.find((f) => !enrolled.includes(f)); if (selected === undefined) selected = null; drawFingers(); }
+  const PREFERRED = () => (enrolled.length ? PREFERRED_MORE : PREFERRED_NEW);
+  function setMode(m) {
+    mode = m;
+    if ($("replaceSection")) $("replaceSection").classList.toggle("d-none", m !== "replace");
+    if ($("addSection")) $("addSection").classList.toggle("d-none", m === "replace");
+    if (m === "replace") { selected = null; drawFingers(); } else pickDefault();
+  }
+  modalEl.querySelectorAll("input[name=enroll_mode]").forEach((r) => r.addEventListener("change", () => setMode(r.value)));
+  modalEl.querySelectorAll(".replace-choice").forEach((b) => b.addEventListener("click", () => { selected = Number(b.dataset.finger); drawFingers(); }));
+  function pickDefault() { selected = PREFERRED().find((f) => !enrolled.includes(f)); if (selected === undefined) selected = null; drawFingers(); }
   modalEl.querySelectorAll(".finger").forEach((b) => b.addEventListener("click", () => { selected = Number(b.dataset.finger); drawFingers(); }));
 
   function show(view) {
@@ -31,10 +53,14 @@
     if ($("btnStart")) $("btnStart").classList.toggle("d-none", view !== "setup");
     $("btnCancel").classList.toggle("d-none", view !== "live" || finished);
     $("btnAnother").classList.toggle("d-none", !(view === "live" && finished));
+    $("btnAnother").innerHTML = failed ? '<i class="bi bi-hand-index me-1"></i>Choose another finger'
+                                       : '<i class="bi bi-plus-lg me-1"></i>Register another finger';
+    $("btnRetry").classList.toggle("d-none", !(view === "live" && finished && failed));
+    $("scanTips").classList.toggle("d-none", view === "live" && finished && !failed);
     $("enrollClose").disabled = $("btnClose").disabled = (view === "live" && !finished);
   }
-  function reset() {
-    finished = false; job = null; lastStep = "queued"; clearTimeout(pollTimer);
+  function clearLive() {
+    finished = false; failed = false; job = null; lastStep = "queued"; clearTimeout(pollTimer);
     $("liveResult").className = "alert d-none mt-3 mb-0";
     $("fpRing").className = "fp-ring";
     modalEl.querySelectorAll("#scanDots span").forEach((d) => d.className = "");
@@ -42,7 +68,11 @@
     $("scanCount").innerHTML = "&nbsp;"; $("liveSub").innerHTML = "&nbsp;"; $("liveLog").textContent = "";
     $("liveTitle").textContent = "Connecting to the device...";
     $("footerHint").textContent = "The device will show its “Enroll fingerprint” screen.";
-    pickDefault(); show("setup");
+  }
+  function reset() {
+    clearLive();
+    if ($("modeAdd")) $("modeAdd").checked = true;
+    setMode("add"); show("setup");
   }
 
   const ORDER = ["queued","preparing","scan1","scan2","scan3","saving","copying"];
@@ -91,20 +121,23 @@
       finished = true; clearTimeout(pollTimer);
       const res = $("liveResult");
       if (data.status === "success") {
-        enrolled.push(Number(st.finger)); changed = true;
+        if (!enrolled.includes(Number(st.finger))) enrolled.push(Number(st.finger));
+        changed = true;
         markSteps("copying_done", false);
         modalEl.querySelectorAll("#liveSteps li").forEach((li) => li.className = "done");
         $("fpRing").className = "fp-ring success";
-        $("liveTitle").textContent = "Fingerprint registered";
-        $("liveSub").textContent = `${NAMES[st.finger]} on ${st.device}`;
+        $("liveTitle").textContent = mode === "replace" ? "Fingerprint replaced" : "Fingerprint registered";
+        $("liveSub").textContent = mode === "replace" ? `Fingerprint no. ${st.finger} on ${st.device}` : `${NAMES[st.finger]} on ${st.device}`;
+        modalEl.querySelectorAll("#scanDots span").forEach((d) => d.className = "on");
         let copied = (st.copied || []).length ? `Copied to: ${st.copied.join(", ")}.` : "No other devices to copy to.";
         if ((st.copy_failed || []).length) copied += ` Not reachable: ${st.copy_failed.join(", ")} (will be copied on the next sync).`;
         res.className = "alert alert-success mt-3 mb-0"; res.textContent = copied;
       } else {
+        failed = data.status !== "cancelled";
         $("fpRing").className = "fp-ring failed";
         markSteps(lastStep, true);
         $("liveTitle").textContent = data.status === "cancelled" ? "Cancelled" : "Registration failed";
-        $("liveSub").textContent = "No fingerprint was saved.";
+        $("liveSub").textContent = mode === "replace" ? "The old fingerprint was kept." : "No fingerprint was saved.";
         res.className = "alert alert-" + (data.status === "cancelled" ? "secondary" : "danger") + " mt-3 mb-0";
         res.textContent = st.message || st.error || "See the technical log.";
       }
@@ -121,15 +154,30 @@
     if (!finished) pollTimer = setTimeout(poll, 800);
   }
 
-  if ($("btnStart")) $("btnStart").addEventListener("click", async () => {
+  async function startJob() {   // same device and finger as chosen in the form
     $("enrollSetupError").classList.add("d-none");
     const r = await fetch(form.action, { method: "POST", body: new FormData(form), headers: { Accept: "application/json" } });
     const data = await r.json().catch(() => ({ ok: false, error: "Server error" }));
-    if (!data.ok) { const e = $("enrollSetupError"); e.textContent = data.error; e.classList.remove("d-none"); return; }
-    job = data; finished = false;
+    if (!data.ok) {
+      const e = $("enrollSetupError"); e.textContent = data.error; e.classList.remove("d-none");
+      show("setup"); return;
+    }
+    job = data; finished = false; failed = false;
     $("footerHint").textContent = "Keep this window open while the employee scans the finger.";
     show("live"); markSteps("queued"); poll();
+  }
+  if ($("btnStart")) $("btnStart").addEventListener("click", async () => {
+    if (mode === "replace" && typeof showConfirm === "function") {
+      const ok = await showConfirm({
+        title: "Replace fingerprint",
+        message: "The employee scans a finger again on the device. The new scan replaces this fingerprint on every " +
+                 "device. If the scan does not succeed, the old fingerprint is kept.",
+        ok: "Replace on device", danger: false });
+      if (!ok) return;
+    }
+    startJob();
   });
+  $("btnRetry").addEventListener("click", () => { const keep = selected; clearLive(); selected = keep; drawFingers(); startJob(); });
   $("btnCancel").addEventListener("click", async () => {
     if (!job) return;
     $("btnCancel").disabled = true;
@@ -138,7 +186,14 @@
     $("liveSub").textContent = "Cancelling...";
     setTimeout(() => { $("btnCancel").disabled = false; }, 2000);
   });
-  $("btnAnother").addEventListener("click", reset);
+  $("btnAnother").addEventListener("click", () => {
+    const failedFinger = failed ? selected : null;
+    reset();
+    if (failedFinger !== null && selected === failedFinger) {   // suggest a different finger than the one that failed
+      const next = PREFERRED().find((f) => !enrolled.includes(f) && f !== failedFinger);
+      if (next !== undefined) { selected = next; drawFingers(); }
+    }
+  });
   modalEl.addEventListener("hidden.bs.modal", () => { if (changed) window.location = window.location.pathname; else reset(); });
   reset();
   {% if open_enroll %}bootstrap.Modal.getOrCreateInstance(modalEl).show();{% endif %}

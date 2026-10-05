@@ -148,17 +148,24 @@ def employee_enroll(request, pk):
         return redirect(employee)
     device = form.cleaned_data["device"]
     finger = form.cleaned_data["finger_index"]
+    replace = form.cleaned_data["replace"]
     wants_json = request.headers.get("Accept") == "application/json"
-    if employee.fingerprints.filter(finger_index=finger).exists():
-        msg = "This finger is already registered. Choose another finger."
+    registered = employee.fingerprints.filter(finger_index=finger).exists()
+    msg = None
+    if replace and not registered:
+        msg = "This fingerprint does not exist yet. Register it as a new finger instead."
+    elif not replace and registered:
+        msg = "This finger is already registered. Choose another finger, or replace it."
+    if msg:
         if wants_json:
             return JsonResponse({"ok": False, "error": msg}, status=400)
         messages.error(request, msg)
         return redirect(employee)
     job = DeviceJob.objects.create(job_type=DeviceJob.TYPE_ENROLL, device=device, employee=employee,
-                                   payload={"finger_index": finger}, created_by=request.user,
+                                   payload={"finger_index": finger, "replace": replace}, created_by=request.user,
                                    result={"stage": "queued", "message": "Waiting for the device..."})
-    ActivityLog.log(request, "Fingerprint registration started", employee, f"device {device}, finger {finger}")
+    ActivityLog.log(request, "Fingerprint replacement started" if replace else "Fingerprint registration started",
+                    employee, f"device {device}, finger {finger}")
     if wants_json:
         return JsonResponse({"ok": True, "job": job.pk, "status_url": reverse("devices:job_status", args=[job.pk]),
                              "cancel_url": reverse("devices:job_cancel", args=[job.pk])})
