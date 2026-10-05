@@ -66,6 +66,32 @@ function showConfirm(opts) {
   });
 }
 
+// Desktop app window (no browser toolbar): back / forward / refresh buttons and the usual keyboard shortcuts.
+if (document.body.hasAttribute("data-desktop-window")) {
+  const nav = { back: () => history.back(), forward: () => history.forward(), reload: () => location.reload() };
+  const canGoBack = () => (window.navigation && "canGoBack" in window.navigation) ? navigation.canGoBack : history.length > 1;
+  const canGoForward = () => (window.navigation && "canGoForward" in window.navigation) ? navigation.canGoForward : true;
+  document.querySelectorAll("[data-nav]").forEach(function (b) {
+    if (b.dataset.nav === "back") b.disabled = !canGoBack();
+    if (b.dataset.nav === "forward") b.disabled = !canGoForward();
+    b.addEventListener("click", function () { nav[b.dataset.nav](); });
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.defaultPrevented) return;
+    const mac = /Mac/.test(navigator.platform);
+    let action = null;
+    if (e.key === "F5" || ((mac ? e.metaKey : e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "r")) action = "reload";
+    else if ((e.altKey && e.key === "ArrowLeft") || (mac && e.metaKey && e.key === "[")) action = "back";
+    else if ((e.altKey && e.key === "ArrowRight") || (mac && e.metaKey && e.key === "]")) action = "forward";
+    else if (e.key === "BrowserBack") action = "back";
+    if (action) { e.preventDefault(); nav[action](); }
+  });
+  window.addEventListener("mouseup", function (e) {  // mouse side buttons
+    if (e.button === 3) { e.preventDefault(); nav.back(); }
+    if (e.button === 4) { e.preventDefault(); nav.forward(); }
+  });
+}
+
 document.addEventListener("click", function (e) {
   const t = e.target.closest("[data-toggle-sidebar]");
   if (t) { document.body.classList.toggle("sidebar-open"); }

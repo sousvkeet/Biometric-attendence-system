@@ -103,3 +103,27 @@ class PerPageTests(TestCase):
         self.rows(per_page=25)
         page = self.client.get(reverse("attendance:list")).context["page"]
         self.assertEqual(page.per_page_value, 100)
+
+
+class DesktopNavigationAndFaviconTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        self.client.force_login(get_user_model().objects.create_superuser("a", "", "pw123456"))
+
+    def test_back_and_refresh_only_in_the_local_desktop_window(self):
+        from django.test import override_settings
+        with override_settings(DESKTOP_MODE=True):
+            page = self.client.get(reverse("dashboard"), REMOTE_ADDR="127.0.0.1")
+            self.assertContains(page, 'data-nav="back"')
+            self.assertContains(page, 'data-nav="reload"')
+            remote = self.client.get(reverse("dashboard"), REMOTE_ADDR="192.168.1.50")  # another office PC with a normal browser
+            self.assertNotContains(remote, 'data-nav="back"')
+        self.assertNotContains(self.client.get(reverse("dashboard"), REMOTE_ADDR="127.0.0.1"), 'data-nav="back"')  # server install
+
+    def test_favicon(self):
+        page = self.client.get(reverse("dashboard"))
+        self.assertContains(page, "img/favicon-32.png")
+        self.assertNotContains(page, 'href="data:,"')
+        r = self.client.get("/favicon.ico")
+        self.assertEqual(r.status_code, 301)
+        self.assertTrue(r["Location"].endswith("img/favicon-32.png"))

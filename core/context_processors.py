@@ -1,8 +1,15 @@
+from django.conf import settings
+
 from .models import SystemSetting
+
+LOCAL_ADDRESSES = ("127.0.0.1", "::1")
 
 
 def app_context(request):
-    ctx = {"settings_obj": None}
+    # Back / refresh buttons: only in the desktop app's own window (it has no browser toolbar). Other PCs that open
+    # the portal over the network use a normal browser with its own buttons.
+    ctx = {"settings_obj": None,
+           "desktop_window": settings.DESKTOP_MODE and request.META.get("REMOTE_ADDR") in LOCAL_ADDRESSES}
     try:
         s = SystemSetting.get()
     except Exception:  # database not migrated yet

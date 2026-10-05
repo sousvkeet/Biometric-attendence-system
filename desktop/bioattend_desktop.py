@@ -25,7 +25,7 @@ import webbrowser
 from pathlib import Path
 
 APP_NAME = "BioAttend"
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 DEFAULT_PORT = 30009
 OLD_DEFAULT_PORTS = {"8090"}  # earlier versions used 8090
 IS_WINDOWS = os.name == "nt"
@@ -614,7 +614,13 @@ def mac_menu(url, window):
     def quit_all():
         send_to_running("quit")
         window.destroy()
-    return [Menu("Actions", [
+    return [Menu("Go", [
+        MenuAction("Back", lambda: window.evaluate_js("history.back()")),
+        MenuAction("Forward", lambda: window.evaluate_js("history.forward()")),
+        MenuAction("Refresh", lambda: window.evaluate_js("location.reload()")),
+        MenuSeparator(),
+        MenuAction("Dashboard", lambda: window.load_url(url)),
+    ]), Menu("Actions", [
         MenuAction("Back up now", later(lambda: ask_service("backup"))),
         MenuAction("Reset administrator password…", later(lambda: ask_service("reset-password"))),
         MenuSeparator(),

@@ -1,6 +1,8 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
+from django.templatetags.static import static
 from django.urls import include, path
+from django.views.generic import RedirectView
 
 from attendance import selfservice
 from attendance.views import holiday_crud, leavetype_crud, shift_crud
@@ -11,6 +13,7 @@ from employees.views import department_crud, designation_crud
 admin.site.site_header = "Biometric Attendance - Database admin"
 
 urlpatterns = [
+    path("favicon.ico", RedirectView.as_view(url=static("img/favicon-32.png"), permanent=True)),
     path("", core_views.home, name="home"),
     path("setup/", core_views.first_run, name="first_run"),
     path("login/", ProtectedLoginView.as_view(), name="login"),

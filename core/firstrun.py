@@ -88,7 +88,7 @@ def code_required(request):
 
 
 class FirstRunMiddleware:
-    EXEMPT = ("/setup/", "/static/", "/healthz", "/backups/restore/status.json")
+    EXEMPT = ("/setup/", "/static/", "/favicon.ico", "/healthz", "/backups/restore/status.json")
 
     def __init__(self, get_response):
         self.get_response = get_response
