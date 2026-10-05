@@ -12,7 +12,10 @@ STAGE="$ROOT/dist/linux-stage"
 mkdir -p "$OUT" "$STAGE"
 rm -f "$OUT"/*"$VERSION"*
 echo "Building BioAttend $VERSION for Linux -> $OUT"
-docker run --rm -v "$ROOT":/src:ro -v "$STAGE":/stage -e VERSION="$VERSION" \
+# A GitHub token (GitHub Actions provides one; locally the gh CLI login is used) avoids GitHub's rate limit
+# for anonymous API requests when looking up the AppImage runtime checksum.
+GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}"
+docker run --rm -v "$ROOT":/src:ro -v "$STAGE":/stage -e VERSION="$VERSION" -e GITHUB_TOKEN="$GITHUB_TOKEN" \
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" almalinux:9 bash /src/desktop/linux/build_app.sh
 docker run --rm -v "$ROOT":/src:ro -v "$STAGE":/stage:ro -v "$OUT":/out -e VERSION="$VERSION" \
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" debian:bookworm-slim bash /src/desktop/linux/package.sh

@@ -140,9 +140,11 @@ EOF
 
 step "AppImage runtime (checked against the SHA-256 digest GitHub publishes)"
 $PY - <<'PYEOF'
-import hashlib, json, urllib.request
-release = json.load(urllib.request.urlopen(
-    "https://api.github.com/repos/AppImage/type2-runtime/releases/tags/continuous", timeout=30))
+import hashlib, json, os, urllib.request
+request = urllib.request.Request("https://api.github.com/repos/AppImage/type2-runtime/releases/tags/continuous")
+if os.environ.get("GITHUB_TOKEN"):  # without a token GitHub allows only 60 API requests per hour
+    request.add_header("Authorization", f"Bearer {os.environ['GITHUB_TOKEN']}")
+release = json.load(urllib.request.urlopen(request, timeout=30))
 asset = next(a for a in release["assets"] if a["name"] == "runtime-x86_64")
 expected = (asset.get("digest") or "").removeprefix("sha256:")
 if not expected:

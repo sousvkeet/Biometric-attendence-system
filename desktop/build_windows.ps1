@@ -154,7 +154,8 @@ if (-not (Test-OwnBootloader)) {
     New-Item -ItemType Directory -Force -Path $PyiSrc | Out-Null
     Run $Py @("-m", "pip", "download", "--quiet", "--no-deps", "--no-binary", ":all:", "pyinstaller==$PyiVersion", "-d", $PyiSrc)
     $sdist = Get-ChildItem $PyiSrc -Filter "pyinstaller-*.tar.gz" | Select-Object -First 1
-    Run $Tar @("-xzf", $sdist.FullName, "-C", $PyiSrc)
+    # Python's tarfile, not tar.exe: the archive has symlinks (changelog, tests) that Windows cannot create
+    Run $Py @("-c", "import sys, tarfile; t = tarfile.open(sys.argv[1]); t.extractall(sys.argv[2], members=[m for m in t if not (m.issym() or m.islnk())], filter='data')", $sdist.FullName, $PyiSrc)
     $tree = Join-Path $PyiSrc "pyinstaller-$PyiVersion"
     $savedPath = $env:PATH
     $env:PATH = "$Mingw\bin;$env:PATH"
