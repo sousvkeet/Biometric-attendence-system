@@ -25,7 +25,7 @@ import webbrowser
 from pathlib import Path
 
 APP_NAME = "BioAttend"
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
 DEFAULT_PORT = 30009
 OLD_DEFAULT_PORTS = {"8090"}  # earlier versions used 8090
 IS_WINDOWS = os.name == "nt"
@@ -434,15 +434,31 @@ def show_tray_icon_on_taskbar():
     return False
 
 
+PORT_TRIES = 20
+
+
 def free_port(preferred, host):
-    for port in [preferred, *range(preferred + 1, preferred + 50)]:
+    """The saved port or one of the next ones; 0 (the system picks any free port) when they are all in use or
+    reserved - Windows reserves blocks of ports for Hyper-V, WSL and Docker that no program may open.
+    Checked with a plain socket because the web server's SO_REUSEADDR would let Windows share a used port."""
+    for port in range(preferred, min(preferred + PORT_TRIES, 65536)):
         with socket.socket() as s:
             try:
                 s.bind((host, port))
                 return port
             except OSError:
                 continue
-    raise RuntimeError("No free network port found")
+    return 0
+
+
+def remember_port(wanted, port):
+    """The saved port could not be used: keep the new one, so the address stays the same from now on."""
+    import logging
+    logging.getLogger("core").warning("Port %s cannot be used (in use, or reserved by Windows); using port %s",
+                                      wanted, port)
+    cfg = read_config()
+    cfg["PORT"] = str(port)
+    write_config(cfg)
 
 
 # ---------------------------------------------------------------- the application
@@ -682,9 +698,12 @@ class DesktopApp:
         from waitress import create_server
         from django.core.wsgi import get_wsgi_application
         host = "0.0.0.0" if lan else "127.0.0.1"
-        self.port = free_port(int(cfg.get("PORT") or DEFAULT_PORT), host)
-        self.server = create_server(get_wsgi_application(), host=host, port=self.port, threads=4,
+        wanted = int(cfg.get("PORT") or DEFAULT_PORT)
+        self.server = create_server(get_wsgi_application(), host=host, port=free_port(wanted, host), threads=4,
                                     ident=APP_NAME, channel_timeout=300)
+        self.port = self.server.effective_port
+        if self.port != wanted:
+            remember_port(wanted, self.port)
         threading.Thread(target=self.server.run, daemon=True, name="web").start()
         threading.Thread(target=self._run_worker, daemon=True, name="worker").start()
         self.url = f"http://127.0.0.1:{self.port}/"

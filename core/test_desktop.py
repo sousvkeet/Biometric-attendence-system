@@ -1,10 +1,12 @@
 """Tests for the cross-platform helpers and the desktop launcher's configuration (run on any OS)."""
 import importlib
 import os
+import socket
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 from django.test import SimpleTestCase
 
@@ -64,6 +66,28 @@ class DesktopConfigTests(SimpleTestCase):
                 desk.write_config(cfg)
                 self.assertTrue(desk.configure_environment(desk.read_config()))
                 self.assertIn("127.0.0.1", os.environ["ALLOWED_HOSTS"].split(","))
+            finally:
+                os.environ.clear()
+                os.environ.update(saved)
+                sys.path.pop(0)
+
+    def test_port_in_use_or_reserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = dict(os.environ)
+            try:
+                os.environ["BIOATTEND_HOME"] = tmp
+                sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "desktop"))
+                desk = importlib.reload(importlib.import_module("bioattend_desktop"))
+                with socket.socket() as busy:
+                    busy.bind(("127.0.0.1", 0))
+                    busy.listen(1)
+                    port = busy.getsockname()[1]
+                    self.assertNotEqual(desk.free_port(port, "127.0.0.1"), port)  # used by another program
+                with mock.patch.object(desk.socket.socket, "bind", side_effect=PermissionError(10013, "reserved")):
+                    self.assertEqual(desk.free_port(30009, "127.0.0.1"), 0)  # all reserved: the system picks one
+                desk.ensure_config()
+                desk.remember_port(30009, 51234)
+                self.assertEqual(desk.ensure_config()["PORT"], "51234")  # same address on the next start
             finally:
                 os.environ.clear()
                 os.environ.update(saved)

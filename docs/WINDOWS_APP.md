@@ -220,7 +220,7 @@ not need this.
 | Forgot the admin password / account locked | Tray icon → **Reset administrator password…** |
 | Devices show **offline** | Same network as the devices? `ping 192.168.1.201` in Command Prompt. Is another program (e.g. ZKTime) connected to the device? Is the comm key correct? |
 | Other PCs cannot open it | Network access enabled and BioAttend restarted (§4)? Windows Firewall rule for BioAttend allowed on *Private* networks? Is the PC's network set to *Private*? |
-| Port 30009 already used by another program | BioAttend automatically uses the next free port (30010, …). The tray tooltip shows the port. |
+| Port 30009 used by another program, or reserved by Windows (Hyper-V, WSL, Docker) | BioAttend automatically uses another free port and keeps it from then on (`PORT=` in `%LOCALAPPDATA%\BioAttend\config.env`). The tray tooltip shows the port. Before 1.0.9 this showed "No free network port found". |
 | Something else | Logs are in `%LOCALAPPDATA%\BioAttend\data\log\` (`bioattend.log`, `errors.log`, `desktop.log`) |
 
 ---
