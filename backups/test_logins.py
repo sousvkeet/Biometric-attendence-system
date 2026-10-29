@@ -7,6 +7,7 @@ import time
 from io import StringIO
 from unittest import mock
 
+import requests  # noqa: F401 - imported before tests patch os.name (fails on Windows otherwise)
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.db import connection

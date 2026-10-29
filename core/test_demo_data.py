@@ -1,3 +1,5 @@
+from io import StringIO
+
 from django.core.management import CommandError, call_command
 from django.test import TestCase
 
@@ -8,7 +10,7 @@ from employees.models import Employee
 
 class DemoDataTests(TestCase):
     def test_fills_an_empty_database_with_simulators_only(self):
-        call_command("demo_data", days=7, stdout=open("/dev/null", "w"))
+        call_command("demo_data", days=7, stdout=StringIO())
         self.assertEqual(Employee.objects.count(), 12)
         self.assertEqual(set(Device.objects.values_list("driver", flat=True)), {Device.DRIVER_SIMULATOR})
         self.assertTrue(AttendanceLog.objects.exists())

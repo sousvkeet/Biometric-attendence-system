@@ -1,7 +1,9 @@
 """Tests for desktop/mac_desktop.py (the macOS parts of the desktop app); they run on any system."""
+import os
 import plistlib
 import sys
 import tempfile
+import unittest
 from pathlib import Path
 from unittest import mock
 
@@ -34,6 +36,7 @@ class MacDesktopTests(SimpleTestCase):
         mac.set_autostart(False)
         self.assertFalse(mac.autostart_enabled())
 
+    @unittest.skipIf(os.name == "nt", "macOS paths (Windows adds drive letters and backslashes)")
     def test_no_launch_agent_from_the_disk_image(self):
         exe = "/Volumes/BioAttend 1.0.5/BioAttend.app/Contents/MacOS/BioAttend"
         with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(sys, "executable", exe):
@@ -41,6 +44,7 @@ class MacDesktopTests(SimpleTestCase):
             mac.set_autostart(True)
         self.assertFalse(mac.autostart_enabled())
 
+    @unittest.skipIf(os.name == "nt", "macOS paths (Windows adds drive letters and backslashes)")
     def test_bundle_path(self):
         exe = "/Applications/BioAttend.app/Contents/MacOS/BioAttend"
         with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(sys, "executable", exe), \
